@@ -59,9 +59,6 @@ export default function ContainerStreams(input: Props) {
       let pendingLogLength = 0;
       let pendingLogBytes = 0;
       let logFlushTimer: ReturnType<typeof setInterval> | undefined;
-      // OpenUI useClaudeScrollPinning port: streaming logs auto-follow the
-      // bottom edge and yield as soon as the user scrolls away; the fade
-      // sensor marks edges while text is appended between scroll events.
       const logOutput = cell<HTMLPreElement>();
       const logFollow = cell<FollowState>({ pinned: true, canJump: false });
       let logEdges: ScrollEdges | undefined;

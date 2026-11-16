@@ -16,8 +16,6 @@ import (
 const maxWalkEntries = 100000
 const maxWalkDepth = 64
 
-// Browse scans with bounded memory. The opaque continuation is the last path;
-// concurrent filesystem edits may change subsequent pages, as with readdir.
 func (s *Service) Browse(ctx context.Context, virtual, after, filter string, recursive bool, minSize, maxSize int64) ([]protocol.FileEntry, string, error) {
 	if len(filter) > 200 || len(after) > 4096 || minSize < 0 || maxSize < 0 || maxSize > 0 && maxSize < minSize {
 		return nil, "", ErrInvalidPath

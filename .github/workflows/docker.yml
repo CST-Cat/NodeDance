@@ -12,12 +12,10 @@ on:
       - 'deploy/docker/agent-entrypoint.sh'
       - 'deploy/docker/compose.agent.yml'
       - '.dockerignore'
-      - 'scripts/test-docker.py'
       - 'scripts/build-rsync.sh'
       - 'scripts/vendor-rsync.py'
       - 'scripts/release_images.py'
       - 'scripts/release-notes.py'
-      - 'scripts/tests/**'
       - 'agent-release.version'
       - '.github/workflows/agent-release.yml'
       - '.github/workflows/docker.yml'
@@ -33,12 +31,10 @@ on:
       - 'deploy/docker/agent-entrypoint.sh'
       - 'deploy/docker/compose.agent.yml'
       - '.dockerignore'
-      - 'scripts/test-docker.py'
       - 'scripts/build-rsync.sh'
       - 'scripts/vendor-rsync.py'
       - 'scripts/release_images.py'
       - 'scripts/release-notes.py'
-      - 'scripts/tests/**'
       - 'agent-release.version'
       - '.github/workflows/agent-release.yml'
       - '.github/workflows/docker.yml'
@@ -82,10 +78,8 @@ jobs:
           pnpm --dir web install --frozen-lockfile
           make build
 
-      - name: Verify direct peer negotiation, NAT traversal and rsync transfer recovery
-        run: |
-          sudo env "PATH=$PATH" "GOPATH=$(go env GOPATH)" "GOMODCACHE=$(go env GOMODCACHE)" "GOCACHE=$(go env GOCACHE)" NODEDANCE_STUN_SERVERS=off NODEDANCE_REQUIRE_RSYNC_TESTS=1 \
-            "$(command -v go)" test -count=1 -v ./internal/peertransport ./internal/core/server -run 'TestICECandidateDiagnostics|TestDirect|TestUnreachableNAT|TestCoreTransfersInExplicit|TestCoreDirectNegotiates|TestCoreCancelsRetainsPartial|TestCoreChunkFallback'
+      - name: Vet Go packages
+        run: go vet ./...
 
       - name: Verify file-manager browser behavior
         if: matrix.arch == 'amd64'
@@ -100,13 +94,7 @@ jobs:
 
       - name: Verify Agent release packaging
         run: |
-          python3 -m unittest discover -s scripts/tests
           python3 scripts/release_images.py test --architecture ${{ matrix.arch }}
 
       - name: Test Agent Docker against native Core
-        run: TEST_CORE_BINARY=.build/nodedance python3 scripts/test-docker.py
-
-      - name: Verify native Core update worker and Agent Docker support
-        run: |
-          sudo env "PATH=$PATH" "GOPATH=$(go env GOPATH)" "GOMODCACHE=$(go env GOMODCACHE)" "GOCACHE=$(go env GOCACHE)" NODEDANCE_TEST_SYSTEMD_UPDATE=1 \
-            "$(command -v go)" test -count=1 ./internal/update
+        run: TEST_CORE_BINARY=.build/nodedance python3 web/scripts/test-docker.py

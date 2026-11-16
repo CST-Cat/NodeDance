@@ -1,4 +1,3 @@
-// Package feeds owns Core-local RSS and Atom subscriptions. It never dispatches Agent work.
 package feeds
 
 import (

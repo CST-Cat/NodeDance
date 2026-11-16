@@ -11,8 +11,6 @@ import (
 	"github.com/moby/moby/client"
 )
 
-// DockerEngine is the production adapter. Every removal keeps volumes and
-// links; the caller supplies exact task-owned names and IDs.
 type DockerEngine struct{ client *client.Client }
 
 func NewDockerEngine(cli *client.Client) (*DockerEngine, error) {

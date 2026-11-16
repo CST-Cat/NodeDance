@@ -24,7 +24,6 @@ const icons = {
   folder: Folder,
   activity: Activity,
 };
-/** SVG assets only; the discovered Core enum owns which choices can be saved. */
 export default function NodeLogo({
   icon,
   platform,

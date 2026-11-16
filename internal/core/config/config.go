@@ -45,8 +45,6 @@ type Sources struct {
 	UserHome    string
 }
 
-// ResolveListen applies the documented CLI > environment > config > default
-// precedence. Each non-empty value is validated before it is returned.
 func ResolveListen(s Sources) (string, error) {
 	for _, candidate := range []string{s.CLIListen, s.EnvListen, s.Config.Listen, DefaultListen} {
 		if candidate == "" {
@@ -69,8 +67,6 @@ func ValidateListen(address string) error {
 		return fmt.Errorf("listen address %q must name an IP address", address)
 	}
 	if strings.Contains(host, "%") {
-		// IPv6 zone identifiers are allowed by net.ListenConfig, but they are
-		// link-specific and should never be added without explicit support.
 		return fmt.Errorf("listen address %q with an IPv6 zone is not supported", address)
 	}
 	if ip := net.ParseIP(host); ip == nil {
@@ -231,8 +227,6 @@ func RuntimeFileTransferLimit(file File, envValue, cliValue string) (int64, erro
 	return protocol.DefaultFileLimit, nil
 }
 
-// RuntimeNonMetricHistoryRetentionDays applies CLI > environment > config >
-// default precedence. Metric minute/hour retention is managed separately.
 func RuntimeNonMetricHistoryRetentionDays(file File, envValue, cliValue string) (int, error) {
 	for _, candidate := range []string{cliValue, envValue} {
 		if strings.TrimSpace(candidate) == "" {
@@ -286,7 +280,6 @@ func Load(path string) (File, error) {
 		}
 	}
 	if value.PublicOrigin != "" {
-		// Validate both schemes here; runServe permits HTTP only with --dev.
 		if err := ValidatePublicOrigin(value.PublicOrigin, true); err != nil {
 			return File{}, fmt.Errorf("config %q: %w", path, err)
 		}

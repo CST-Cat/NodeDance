@@ -197,9 +197,6 @@ func (s *Server) handleContainerCreateTask(w http.ResponseWriter, r *http.Reques
 		boundJournalID = journalID
 		return false, release, nil
 	}
-	// Hold the dispatch lock while the task and its non-persistent body are
-	// committed, so a ready Agent cannot claim the task before its parameters
-	// have been staged.
 	_, knownRetry, lookupErr := s.tasks.FindByIdempotency(r.Context(), nodeID, key)
 	if lookupErr != nil {
 		http.Error(w, "task idempotency could not be checked", http.StatusInternalServerError)
@@ -383,10 +380,6 @@ func (s *Server) handleCreateContainerTask(w http.ResponseWriter, r *http.Reques
 	if !decodeJSON(w, r, &request) {
 		return
 	}
-	// Deletion requires a separate, exact-target confirmation. The boolean is
-	// still part of the canonical typed-intent digest; this transient full-ID
-	// echo proves that the administrator confirmed the resource shown by this
-	// route and is never persisted as a secret or free-form payload.
 	if request.Action == protocol.TaskDelete {
 		if !request.DeleteConfirmed || request.DeleteConfirmationID != containerID {
 			http.Error(w, "delete confirmation must match the full target ID", http.StatusBadRequest)
@@ -407,9 +400,6 @@ func (s *Server) handleCreateContainerTask(w http.ResponseWriter, r *http.Reques
 	}
 	intent := coretasks.Intent{Action: request.Action, ContainerID: containerID, NewName: request.NewName,
 		DeleteConfirmed: request.DeleteConfirmed, Rebuild: request.Rebuild}
-	// Capture the latest trusted Docker view before opening the task store's
-	// transaction. The gated store may return an idempotent task without
-	// invoking gate, even if this view is stale or unavailable.
 	state, view, _, viewErr := s.dockerViewStateForNode(r.Context(), nodeID)
 	gate := func(ctx context.Context) (bool, func(), error) {
 		if viewErr != nil {
@@ -545,16 +535,11 @@ var (
 	errTaskContainerNotFound = errors.New("container not found in fresh Docker inventory")
 )
 
-// lockTaskBridgeReady pins the active synchronized connection until release.
-// Store.EnqueueWithGate calls this only after its durable idempotency lookup,
-// then holds the pin through new-task commit.
 func (s *Server) lockTaskBridgeReady(nodeID string, generation uint64) (func(), error) {
 	_, release, err := s.lockTaskBridgeReadySession(nodeID, generation)
 	return release, err
 }
 
-// lockTaskBridgeReadySession pins the synchronized Agent session while a new
-// task is committed and any one-use payload is bound to its journal identity.
 func (s *Server) lockTaskBridgeReadySession(nodeID string, generation uint64) (string, func(), error) {
 	s.agentConnectionsMu.Lock()
 	for _, connection := range s.agentConnections {

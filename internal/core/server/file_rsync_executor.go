@@ -22,8 +22,6 @@ type rsyncCommitError struct{ cause error }
 func (e rsyncCommitError) Error() string { return e.cause.Error() }
 func (e rsyncCommitError) Unwrap() error { return e.cause }
 
-// directAttemptChain prunes the four direct layers by the operator-maintained
-// line type of both nodes. Unknown labels always run the full chain.
 func directAttemptChain(source, target protocol.NodeAsset) []string {
 	full := []string{"tcp", "reverse", "tcp_punch", "ice"}
 	if !protocol.ValidNodeLineType(source.LineType) || !protocol.ValidNodeLineType(target.LineType) {

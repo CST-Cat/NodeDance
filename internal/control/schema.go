@@ -12,8 +12,6 @@ import (
 	"unicode/utf8"
 )
 
-// ValidateJSON enforces the published structural contract. Stateful permission,
-// confirmation, revision and resource checks remain in Core/Agent handlers.
 func ValidateJSON(schema any, raw []byte) error {
 	if len(bytes.TrimSpace(raw)) == 0 {
 		if s, ok := schema.(map[string]any); ok {

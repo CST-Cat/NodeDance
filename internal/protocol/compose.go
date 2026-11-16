@@ -19,9 +19,6 @@ const (
 var composeName = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
 var composeOperationID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$`)
 
-// ComposeProjectRef is derived from Docker's standard Compose labels. Config
-// files retain their original order; environment values and raw labels are
-// never sent to Core.
 type ComposeProjectRef struct {
 	Key              string   `json:"key"`
 	Name             string   `json:"name"`
@@ -67,9 +64,6 @@ type ComposeResponse struct {
 	ContentSHA256 string           `json:"contentSha256,omitempty"`
 }
 
-// ComposeProjectKey binds a project name to its working directory and ordered
-// source list. Identical service/project names in different paths therefore
-// cannot select each other's configuration.
 func ComposeProjectKey(name, workingDirectory string, configFiles []string) string {
 	parts := []string{name, filepath.Clean(workingDirectory)}
 	for _, file := range configFiles {

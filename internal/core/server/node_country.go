@@ -51,10 +51,6 @@ func (s *Server) nodeGeographyPreferences(ctx context.Context, nodeIDs []string)
 	}
 }
 
-func (s *Server) nodeGeography(ctx context.Context, nodeID, agentID string) (geolocation.Country, geolocation.Location) {
-	return s.nodeGeographyWithPreferences(ctx, nodeID, agentID, nodeGeographyPreferences{})
-}
-
 func (s *Server) nodeGeographyWithPreferences(ctx context.Context, nodeID, agentID string, prefs nodeGeographyPreferences) (geolocation.Country, geolocation.Location) {
 	locationJSON := prefs.locations[nodeID]
 	if prefs.locations == nil {

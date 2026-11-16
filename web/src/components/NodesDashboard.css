@@ -276,7 +276,6 @@
   }
 }
 
-/* Shared action alignment; glyphs keep their natural aspect ratio. */
 .app-shell[data-theme] .dashboard-toolbar-actions > button {
   display: inline-flex;
   align-items: center;

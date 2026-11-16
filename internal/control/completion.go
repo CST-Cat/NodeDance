@@ -22,7 +22,6 @@ func valueAt(value any, path string) any {
 	return value
 }
 
-// CompletionInput resolves follow-up requests from the connected Core contract.
 func CompletionInput(o Operation, in Input, accepted Result) (string, Input, error) {
 	if o.Completion == nil {
 		return "", Input{}, fmt.Errorf("operation has no completion contract")
@@ -61,8 +60,6 @@ func stringValues(values map[string]string) map[string]any {
 	return result
 }
 
-// Wait observes existing work. It never resubmits the original operation.
-// Unknown/canceled/failed are terminal outcomes, not transport errors to replay.
 func (c *Client) Wait(ctx context.Context, catalog Catalog, o Operation, in Input, accepted Result, observe func(Result)) Result {
 	if accepted.Error != "" || o.Completion == nil {
 		return accepted

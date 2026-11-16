@@ -1,7 +1,5 @@
 const {fillExpanded}=require('./expanded-textarea.cjs')
 const {setBrowserLanguage}=require('./browser-language.cjs')
-// Isolated real Core + root Agent + Chromium. Only disposable file fixtures
-// are modified. No systemd installation, host commands or Docker mutations.
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=require('node:net'),crypto=require('node:crypto')
 const {spawn,execFileSync}=require('node:child_process'),{chromium}=require('playwright')
 const root=path.resolve(__dirname,'../..'),artifacts=path.join(root,'.build/file-audit')
@@ -9,8 +7,6 @@ fs.mkdirSync(artifacts,{recursive:true})
 async function port(){const s=net.createServer();await new Promise(r=>s.listen(0,'127.0.0.1',r));const value=s.address().port;await new Promise(r=>s.close(r));return value}
 async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await Promise.race([new Promise(r=>p.once('exit',r)),new Promise(r=>setTimeout(r,5000))]);if(p.exitCode===null)p.kill('SIGKILL')}
 ;(async()=>{
- // Build the production Driver separately for exhaustive browser/API probes.
- // This test-only module is served by Playwright; no test hook enters the app.
  const {build}=await import('vite')
  await build({configFile:false,logLevel:'error',define:{'process.env.NODE_ENV':JSON.stringify('production')},build:{lib:{entry:path.join(root,'web/src/file-manager.ts'),formats:['es'],fileName:()=> 'driver-audit.js'},outDir:path.join(artifacts,'driver'),emptyOutDir:true}})
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'nodedance-file-audit-')),data=path.join(dir,'core'),files=path.join(dir,'files'),state=execFileSync('sudo',['mktemp','-d','/run/nodedance-file-audit-XXXXXX'],{encoding:'utf8'}).trim(),base=`http://127.0.0.1:${await port()}`
@@ -45,8 +41,6 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
   agent=spawn('sudo',['env',`NODEDANCE_AGENT_FILE_ROOT=${files}`,'DOCKER_HOST=unix:///nonexistent/nodedance-file-fixture.sock',path.join(root,'.build/nodedance-agent'),'run','--config',path.join(state,'agent.json')],{stdio:['ignore','pipe','pipe']});agent.stderr.on('data',v=>logs+=v)
   const endpoint=(name,query={})=>{const o=operation(name);return base+o.path.replace('{nodeId}',node)+(Object.keys(query).length?'?'+new URLSearchParams(query):'')}
   let online=false;for(let i=0;i<200;i++){const response=await context.request.get(endpoint('files.list',{path:'/'}));if(response.ok()){online=true;break};await new Promise(r=>setTimeout(r,100))};assert.ok(online,logs)
-  // Selected roots use the same symlink/traversal rejection as full-host roots.
-  // All targets below remain inside this disposable fixture.
   for(const filePath of ['/link','/../hello.txt','/many/../hello.txt']){
    const rejected=await context.request.get(endpoint('files.text',{path:filePath}))
    assert.equal(rejected.status(),400,`Unsafe file path accepted: ${filePath}`)

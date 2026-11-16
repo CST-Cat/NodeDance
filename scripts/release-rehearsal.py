@@ -21,8 +21,6 @@ release_notes = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(release_notes)
 
 VERSION = release_notes.VERSION
-# The rehearsal record lives in version control so the release workflows can
-# verify it from the tagged commit on GitHub, not from the local working tree.
 REHEARSAL_MARKER = ".release-rehearsals"
 
 
@@ -37,7 +35,6 @@ def run(command, allow_failure=False):
 
 
 def check_local(component, tag, agent_tag=None):
-    """Validate everything decidable from the working tree."""
     if not re.fullmatch(component + "-v" + VERSION, tag):
         raise RehearsalError(f"invalid {component} tag: {tag}")
     changelog = (ROOT / f"CHANGELOG_{component.upper()}.md").read_text()
@@ -67,10 +64,8 @@ def check_local(component, tag, agent_tag=None):
 
 
 def check_remote(component, tag, agent_tag=None):
-    """Validate publication preconditions that need GitHub state."""
     repository = run(["gh", "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"])
     if component == "core":
-        # The pairing must already be the newest stable published Agent release.
         listing = json.loads(run(["gh", "api", "repos/{owner}/{repo}/releases?per_page=100"]))
         stable = [entry["tag_name"] for entry in listing
                   if not entry["draft"] and not entry["prerelease"]
@@ -79,7 +74,6 @@ def check_remote(component, tag, agent_tag=None):
         if agent_tag != newest:
             raise RehearsalError(f"Core pairing must use newest stable Agent {newest}, not {agent_tag}")
     existing = run(["gh", "api", f"repos/{repository}/releases/tags/{tag}"], allow_failure=True)
-    # gh prints the JSON error body to stdout even on HTTP 404 (no release).
     if existing and '"message":"Not Found"' not in existing:
         raise RehearsalError(f"release {tag} already exists")
     return repository

@@ -45,7 +45,6 @@ compressed = gzip.compress(payload, mtime=0)
 output = ROOT / 'internal/core/geolocation/cities.json.gz'
 source_hash = hashlib.sha256(args.cities_zip.read_bytes()).hexdigest()
 if args.check:
-    # Compare decompressed bytes as gzip headers may differ across Python versions.
     if gzip.decompress(output.read_bytes()) != payload:
         raise SystemExit('City directory differs; rebuild with the reviewed source data.')
     notice = (ROOT / 'internal/core/geolocation/cities-NOTICE.txt').read_text()

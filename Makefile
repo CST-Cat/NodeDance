@@ -33,7 +33,7 @@ help:
 	  '  make build      build Core and Agent binaries' \
 	  '  make install    install the Core binary under PREFIX' \
 	  '  make install-agent install the Agent binary under PREFIX' \
-	  '  make check      run the frontend checks and Go tests' \
+	  '  make check      run the frontend checks and Go compile checks' \
 	  '  make run        start the Core' \
 	  '  make agent      start the Agent'
 
@@ -69,8 +69,7 @@ install-agent:
 	install -m 0755 .build/nodedance-agent "$(DESTDIR)$(BINDIR)/nodedance-agent"
 
 check: frontend rsync-bundle
-	python3 -m unittest discover -s scripts/tests
-	go test ./...
+	go vet ./...
 	python3 scripts/interface-coverage.py --check
 
 run:

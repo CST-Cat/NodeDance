@@ -44,8 +44,6 @@ const (
 
 var fileRequestID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 
-// FileRequest is a typed, read-only request sent by Core after authenticating
-// the administrator Session and binding the transfer to a node generation.
 type FileRequest struct {
 	Directory       bool          `json:"directory,omitempty"`
 	Data            *FileDataOpen `json:"data,omitempty"`

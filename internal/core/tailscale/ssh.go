@@ -504,9 +504,6 @@ func validateCoreURL(value string) (string, error) {
 	return strings.TrimSuffix(parsed.String(), "/"), nil
 }
 
-// SelectReachableCoreURL probes from the target node. curl's normal CA and
-// hostname verification stays enabled; the helper never uses an insecure TLS
-// flag. A backup is not contacted unless allowFallback is explicitly true.
 func SelectReachableCoreURL(ctx context.Context, remote Remote, primary, fallback string, allowFallback bool) (string, error) {
 	primary, err := validateCoreURL(primary)
 	if err != nil {
@@ -551,11 +548,6 @@ exit 31
 
 type Enrollment struct{ NodeID, Token string }
 
-// preflightRemoteFileRoot runs the Agent's exact filesystem validator on the
-// target before Core creates a one-time enrollment identity. The binary is
-// the already signature-verified artifact selected for this target's platform;
-// its digest is checked again after transfer. The path is transported as
-// base64 data and passed to the validator as one process argument.
 func preflightRemoteFileRoot(ctx context.Context, remote Remote, preflight Preflight, artifact Artifact, fileRoot string) error {
 	if err := validateFileRootRequest(fileRoot); err != nil {
 		return err
@@ -599,8 +591,6 @@ FILE_ROOT="$(printf '%%s' '%s' | base64 -d)"
 	return nil
 }
 
-// InstallRemote installs the verified Agent artifact with the requested file
-// policy. The target installer validates the directory before generating the unit.
 func InstallRemote(ctx context.Context, remote Remote, preflight Preflight, artifact Artifact, coreURL string, enrollment Enrollment, fileRoot string, disableFileRoot bool) error {
 	coreURL, err := validateCoreURL(coreURL)
 	if err != nil {
@@ -856,7 +846,6 @@ func pathContains(parent, child string) bool {
 	return err == nil && relative != "." && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) && !filepath.IsAbs(relative)
 }
 
-// HashSignedPayload is exported for release tooling and deterministic tests.
 func HashSignedPayload(data []byte) string {
 	sum := sha256.Sum256(data)
 	return fmt.Sprintf("%x", sum[:])

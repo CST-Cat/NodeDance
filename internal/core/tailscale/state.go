@@ -57,12 +57,6 @@ func (s *StateStore) readLocked() (State, error) {
 	return state, nil
 }
 
-func (s *StateStore) Save(state State) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.saveLocked(state)
-}
-
 func (s *StateStore) Update(update func(*State) error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -169,9 +163,6 @@ func (s *StateStore) Associate(identity, nodeID string) error {
 	return s.saveLocked(state)
 }
 
-// Disassociate removes a peer mapping only when it still points at nodeID.
-// This keeps resolution of an older deployment task from erasing a newer
-// association for the same peer.
 func (s *StateStore) Disassociate(identity, nodeID string) error {
 	if identity == "" || nodeID == "" {
 		return errors.New("stable peer identity and NodeDance node ID are required")

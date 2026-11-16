@@ -1,7 +1,3 @@
-// Package taskrunner owns the Agent task worker lifetime independently of any
-// one WebSocket connection. It persists receipt before acknowledging a task,
-// delegates actual work to the verified container-actions executor, and never
-// replays interrupted or uncertain tasks after process restart.
 package taskrunner
 
 import (
@@ -199,10 +195,6 @@ func New(nodeID string, journal Journal, executor Executor, options Options) (*R
 	}, nil
 }
 
-// Start initializes restart recovery once, before any connection can admit a
-// dispatch. The supplied context is the Agent process context, never a session
-// context. A delivered queued record and any interrupted running record become
-// unknown before workers are enabled.
 func (r *Runner) Start(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("Agent task runner process context is nil")
@@ -251,10 +243,6 @@ func (r *Runner) Start(ctx context.Context) error {
 	return nil
 }
 
-// Connect attaches one negotiated bridge-capable connection. A new connection
-// remains unable to accept dispatches until the complete journal snapshot was
-// reconciled and MarkSynchronized is called. Replacing a connection never
-// cancels process-scoped work.
 func (r *Runner) Connect(generation uint64, journalID string, capabilities []string) error {
 	if generation == 0 || !validJournalID(journalID) {
 		return ErrStaleGeneration
@@ -299,8 +287,6 @@ func (r *Runner) MarkSynchronized(generation uint64, journalID string) error {
 	return nil
 }
 
-// Disconnect detaches only the sender/receiver for the matching generation.
-// Accepted jobs and their process contexts remain intact.
 func (r *Runner) Disconnect(generation uint64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -327,8 +313,6 @@ func (r *Runner) CapacityLimit() int {
 	return r.options.Workers + r.options.QueueCapacity
 }
 
-// CancelImagePull interrupts only an active image pull. The executor remains
-// responsible for verifying Engine state before it reports a canceled result.
 func (r *Runner) CancelImagePull(taskID string) bool {
 	r.mu.Lock()
 	cancel := r.activeImagePulls[taskID]
@@ -347,18 +331,8 @@ func (r *Runner) CancelFileTransfer(taskID string) bool {
 	return r.files.CancelFileTransfer(taskID)
 }
 
-// ReportsChanged is a coalesced, nonblocking wake signal for the currently
-// attached transport. The SQLite journal remains the source of truth; callers
-// must DrainReports after a wake and use a complete snapshot when requested.
-// The signal is process-lifetime state and is intentionally not tied to one
-// WebSocket generation.
 func (r *Runner) ReportsChanged() <-chan struct{} { return r.reportWake }
 
-// AcceptDispatch durably writes task identity and receipt before it returns an
-// acknowledgement. Queue admission is reserved first, so full capacity never
-// leaves a newly accepted-but-unserviceable row. Ambiguous SQLite errors never
-// call the executor; a repeated identical dispatch can safely inspect and then
-// schedule a still-queued row within this process.
 func (r *Runner) AcceptDispatch(ctx context.Context, generation uint64, envelope protocol.Envelope, dispatch protocol.TaskDispatch) (protocol.TaskReport, error) {
 	if ctx == nil {
 		return protocol.TaskReport{}, protocol.ErrInvalidTaskMessage
@@ -458,8 +432,6 @@ func (r *Runner) AcceptDispatch(ctx context.Context, generation uint64, envelope
 	return report, nil
 }
 
-// AcceptReconcile runs only the executor's read-only baseline reconciliation
-// for an existing unknown task. It cannot enqueue or mutate Docker state.
 func (r *Runner) AcceptReconcile(ctx context.Context, generation uint64, envelope protocol.Envelope, request protocol.TaskReconcileRequest) (protocol.TaskReport, error) {
 	if ctx == nil {
 		return protocol.TaskReport{}, protocol.ErrInvalidTaskMessage
@@ -521,9 +493,6 @@ func (r *Runner) AcceptReconcile(ctx context.Context, generation uint64, envelop
 	return report, nil
 }
 
-// DrainReports returns coalesced report hints reloaded from SQLite. A dirty
-// flag asks the session to request/build a complete snapshot instead of trying
-// to encode a possibly incomplete queue. max is bounded to one wire page.
 func (r *Runner) DrainReports(generation uint64, max int) (ReportBatch, error) {
 	if max < 1 || max > protocol.TaskSnapshotPageSize {
 		return ReportBatch{}, ErrInvalidSnapshot
@@ -602,8 +571,6 @@ func (r *Runner) AcknowledgeReport(generation uint64, taskID string, reportRevis
 	}
 	current, ok := r.pendingReports[taskID]
 	if !ok {
-		// Duplicate acknowledgements are harmless after a report has already
-		// been cleared, including by a complete snapshot acknowledgement.
 		return nil
 	}
 	if current != reportRevision {
@@ -613,8 +580,6 @@ func (r *Runner) AcknowledgeReport(generation uint64, taskID string, reportRevis
 	return nil
 }
 
-// RequestSnapshot is intended for reconnect synchronization, report queue
-// overflow, and the session's periodic lost-ACK repair timer.
 func (r *Runner) RequestSnapshot(generation uint64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -627,9 +592,6 @@ func (r *Runner) RequestSnapshot(generation uint64) {
 	}
 }
 
-// SnapshotPages obtains one frozen bounded SQLite candidate, filters it to
-// Core-delivered records, and only then splits it into contiguous wire pages.
-// It never exposes a partial snapshot or pages over a live changing table.
 func (r *Runner) SnapshotPages(generation uint64, snapshotID string) ([]protocol.TaskSnapshotPage, error) {
 	if !validSnapshotID(snapshotID) {
 		return nil, ErrInvalidSnapshot
@@ -703,9 +665,6 @@ func (r *Runner) SnapshotPages(generation uint64, snapshotID string) ([]protocol
 	return pages, nil
 }
 
-// AcknowledgeSnapshot clears the resync barrier only if no durable report
-// changed since the snapshot candidate began. Otherwise the caller must take a
-// new complete snapshot; an interleaved update cannot disappear in a page gap.
 func (r *Runner) AcknowledgeSnapshot(generation uint64, snapshotID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -734,9 +693,6 @@ func (r *Runner) AcknowledgeSnapshot(generation uint64, snapshotID string) error
 	return nil
 }
 
-// Stop cancels process-scoped worker contexts and joins within ctx. A timeout
-// does not claim that an Engine call stopped; unfinished journal states remain
-// for RecoverInterrupted to turn into unknown on the next process start.
 func (r *Runner) Stop(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("Agent task runner stop context is nil")
@@ -852,8 +808,6 @@ func (r *Runner) runJob(job taskJob) {
 		}
 		if r.executor != nil {
 			_, _ = r.executor.ExecuteObserved(ctx, request, func(taskjournal.Snapshot) {
-				// ExecuteObserved invokes this only after its durable running commit
-				// has been confirmed by a bounded journal read.
 				r.notify(job.taskID)
 			})
 		}
@@ -972,9 +926,6 @@ func reportFromSnapshot(snapshot taskjournal.Snapshot, nodeID, journalID string)
 	if snapshot.Status == taskstate.Unknown {
 		result = protocol.TaskResult{Code: string(taskjournal.ResultUncertain)}
 		if snapshot.Result.ObservedState == "recovery_required" || snapshot.Result.ObservedState == "deployment_verified" {
-			// Compose deployment recovery outcomes are already constrained by the
-			// Agent journal to a small code allowlist. Preserve those actionable
-			// states for Core; never forward arbitrary command output or config text.
 			result.ObservedState = snapshot.Result.ObservedState
 			result.ResourceRevision = snapshot.Result.ResourceRevision
 		}

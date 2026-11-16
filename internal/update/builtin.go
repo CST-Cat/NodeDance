@@ -1,7 +1,5 @@
 package update
 
-// Updates execute through the installed product binary. A transient worker owns
-// the transaction so replacing/restarting the application cannot kill it.
 import (
 	"bufio"
 	"context"
@@ -66,8 +64,6 @@ func launchNative(ctx context.Context, executable, configRaw, rpcRaw string) (Re
 	if _, err := rand.Read(nonce[:]); err != nil {
 		return Response{}, err
 	}
-	// PID 1 starts the worker independently of the requesting service cgroup.
-	// Its reply is a private temporary file rather than a pipe tied to the target.
 	reply, err := os.CreateTemp("", "nodedance-update-response-*.json")
 	if err != nil {
 		return Response{}, err
@@ -162,7 +158,6 @@ func discover(ctx context.Context, component, dataDir string) (Config, map[strin
 				cfg, _ := match["Config"].(map[string]any)
 				target.Mode = "docker"
 				target.Container = strings.TrimPrefix(match["Name"].(string), "/")
-				// Resolve the application's private data mount to its actual host path.
 				mounts, _ := match["Mounts"].([]any)
 				for _, entry := range mounts {
 					m, _ := entry.(map[string]any)
@@ -231,8 +226,6 @@ func discover(ctx context.Context, component, dataDir string) (Config, map[strin
 }
 func intNumber(v any) int { n, _ := v.(float64); return int(n) }
 
-// Internal is entered only by a product-spawned worker, never by API-supplied
-// commands. It does not install a binary, register a daemon or change services.
 func Internal(args []string, stdout, stderr io.Writer) (bool, error) {
 	return internal(args, stdout, stderr, NewGitHub(), New)
 }
@@ -280,10 +273,6 @@ func agentWorkerResources() func() {
 	}
 }
 
-func runRPC(config Config, rpc RPC, stdout io.Writer, resolver Resolver) error {
-	return runRPCWithFactory(config, rpc, stdout, resolver, New)
-}
-
 func runRPCWithFactory(config Config, rpc RPC, stdout io.Writer, resolver Resolver, factory func(Config, Resolver) (*Manager, error)) error {
 	if len(config.Targets) != 1 || config.Targets[rpc.Request.Component].Mode == "" {
 		return json.NewEncoder(stdout).Encode(Response{Status: 400, Error: "worker must manage its own product"})
@@ -293,7 +282,6 @@ func runRPCWithFactory(config Config, rpc RPC, stdout io.Writer, resolver Resolv
 		return json.NewEncoder(stdout).Encode(Response{Status: 500, Error: err.Error()})
 	}
 	if rpc.Action != "apply" && rpc.Action != "rollback" && rpc.Action != "delete-backup" {
-		// Observation must remain available while the transaction holds its lock.
 		manager := &Manager{Config: config, Resolver: resolver, command: execute, Docker: NewDocker(), jobs: jobs}
 		interrupted := false
 		for _, job := range manager.jobs {
@@ -313,8 +301,6 @@ func runRPCWithFactory(config Config, rpc RPC, stdout io.Writer, resolver Resolv
 		}
 		return json.NewEncoder(stdout).Encode(manager.Handle(context.Background(), rpc))
 	}
-	// A repeated submission can observe its durable acceptance while the original
-	// worker still owns the lock, without starting another transaction.
 	if err := Validate(rpc.Request); err != nil {
 		return json.NewEncoder(stdout).Encode(Response{Status: 400, Error: err.Error()})
 	}
@@ -339,20 +325,15 @@ func runRPCWithFactory(config Config, rpc RPC, stdout io.Writer, resolver Resolv
 	}
 	response := manager.Handle(context.Background(), rpc)
 	err = json.NewEncoder(stdout).Encode(response)
-	// Close waits for completion. The worker belongs to a separate service or
-	// container and therefore survives the product's stop/restart.
 	manager.workers.Wait()
 	manager.Close()
 	return err
 }
 
-// worker starts the fixed update worker container for a Docker Agent. Only the
-// Agent still deploys in a container; Core runs as the managed systemd service.
 func (d *Docker) worker(ctx context.Context, product map[string]any, component, config, rpc string) (Response, error) {
 	if component != "agent" {
 		return Response{}, errors.New("only the Docker Agent starts its update worker in a container")
 	}
-	// Remove only completed workers bearing our exact ownership label.
 	var old []struct {
 		ID    string `json:"Id"`
 		State string `json:"State"`
@@ -412,8 +393,6 @@ func (d *Docker) worker(ctx context.Context, product map[string]any, component, 
 		output.Write(frame)
 		var result Response
 		if json.Unmarshal([]byte(strings.TrimSpace(output.String())), &result) == nil {
-			// Cleanup is independent of request cancellation; a later invocation also
-			// collects finished workers if the calling product restarted meanwhile.
 			go func() {
 				cleanup, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 				defer cancel()
@@ -430,7 +409,6 @@ func updateState(dataDir string) string {
 	return filepath.Join(filepath.Dir(dataDir), "."+filepath.Base(dataDir)+"-updates")
 }
 
-// RecordRuntime is written by Core startup, not supplied by update callers.
 func RecordRuntime(dataDir string, target Target) error {
 	raw, err := json.Marshal(target)
 	if err != nil {

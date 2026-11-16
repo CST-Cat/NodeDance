@@ -12,9 +12,6 @@ import (
 	"time"
 )
 
-// Echo requests use a random payload and identifier, and accept only a reply
-// from the resolved target with the matching payload. DNS failures stay DNS
-// failures rather than being counted as packet loss.
 func (e *Executor) checkICMP(ctx context.Context, target string) error {
 	u, err := url.Parse(target)
 	if err != nil {

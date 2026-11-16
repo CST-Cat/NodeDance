@@ -171,7 +171,6 @@ func privateDir(path string) error {
 	if err != nil {
 		return err
 	}
-	// FileInfo.Sys is syscall.Stat_t on Unix; descriptor stat avoids type aliases.
 	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return fmt.Errorf("private state directory: %w", err)
@@ -315,8 +314,6 @@ func (c *Client) request(ctx context.Context, o Operation, in Input, body io.Rea
 	return req, nil
 }
 
-// Execute is the common dispatch for every finite remote operation.
-// Binary downloads use a caller-owned writer; uploads do not pass through JSON.
 func (c *Client) Execute(ctx context.Context, o Operation, in Input, upload io.Reader, download io.Writer) Result {
 	result := Result{Operation: o.Name}
 	fail := func(err error) Result { result.Error = err.Error(); return result }
@@ -364,8 +361,6 @@ func (c *Client) Execute(ctx context.Context, o Operation, in Input, upload io.R
 			contentType = writer.FormDataContentType()
 		}
 	}
-	// Both terminal presentations keep authenticated sessions until explicit
-	// revocation. Only request this policy when advertised by the connected Core.
 	if o.Name == "auth.login" || o.Name == "auth.setup" || o.Name == "auth.switch" {
 		if schema, ok := o.BodySchema.(map[string]any); ok {
 			if properties, ok := schema["properties"].(map[string]any); ok && properties["persistent"] != nil {
@@ -382,9 +377,6 @@ func (c *Client) Execute(ctx context.Context, o Operation, in Input, upload io.R
 		}
 	}
 	if o.Name == "auth.login" || o.Name == "auth.setup" {
-		// CookieJar supports concurrent access; replacing the http.Client's
-		// Jar while a stream/request uses it does not. Expire the old origin
-		// cookies in place before obtaining fresh login/setup CSRF state.
 		cookies := c.http.Jar.Cookies(c.base)
 		for _, cookie := range cookies {
 			cookie.MaxAge = -1
@@ -469,7 +461,6 @@ func (c *Client) Connect(ctx context.Context, o Operation, in Input) (*websocket
 	return conn, nil
 }
 
-// Catalog reads the connected Core's contract, rather than a client-side copy.
 func (c *Client) Catalog(ctx context.Context) (Catalog, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base.String()+"/api/v1/operations", nil)
 	if err != nil {

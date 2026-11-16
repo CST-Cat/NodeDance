@@ -1,4 +1,3 @@
-// Package localstate stores root-owned private Agent runtime state.
 package localstate
 
 import (
@@ -78,8 +77,6 @@ func Read(path string, v any) error {
 	if !ok || !info.Mode().IsRegular() || st.Uid != 0 || info.Mode().Perm() != 0600 {
 		return errors.New("Agent state file must be root-owned regular 0600")
 	}
-	// Read one byte beyond the limit so a truncated reader cannot disguise
-	// trailing data as EOF. Apply the same bound before replacing state.
 	data, err := io.ReadAll(io.LimitReader(f, maxStateBytes+1))
 	if err != nil {
 		return err

@@ -3,8 +3,6 @@
   container-type: inline-size;
   container-name: control-panel;
   max-height: calc(100dvh - 32px);
-  /* The shell never scrolls: the rounded rim stays clean and the slim
-     scrollbar lives on the inner body, away from the corners. */
   overflow: hidden;
   margin: auto;
   border: 1px solid var(--overlay-edge);
@@ -14,8 +12,6 @@
   background: var(--surface-raised);
   box-shadow: var(--overlay-lift);
 }
-/* Closed <dialog> elements must keep the UA's display:none; the flex column
-   layout applies only while the dialog is open. */
 .ui-dialog[data-v-b0bbf977][open] {
   display: flex;
   flex-direction: column;
@@ -23,7 +19,6 @@
 .ui-dialog[data-v-b0bbf977]::backdrop {
   background: rgb(20 20 19 / .24);
 }
-/* Shared header row: title plus the one close affordance every dialog has. */
 .ui-dialog-head[data-v-b0bbf977] {
   flex: none;
   display: flex;
@@ -62,7 +57,6 @@
   opacity: 0.45;
   cursor: not-allowed;
 }
-/* Inner scroll region: the only scrolling surface, inset from the rim. */
 .ui-dialog-body[data-v-b0bbf977] {
   flex: 1 1 auto;
   min-height: 0;
@@ -82,8 +76,6 @@ p[data-v-b0bbf977] {
   line-height: 1.55;
   padding-top: 16px;
 }
-/* SystemDialog lays its content out in a single form; the shell padding is
-   zero, so the form carries the shared horizontal gutters itself. */
 .ui-dialog > form[data-v-b0bbf977] {
   padding: 0 20px;
   min-height: 0;
@@ -180,7 +172,6 @@ footer[data-v-b0bbf977] {
   }
 }
 
-/* Entrance follows the reference's short reveal; native modal focus stays intact. */
 .ui-dialog[open] {
   animation: dialog-reveal 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }

@@ -181,9 +181,6 @@ else
 fi
 
 tmp_dir=$(mktemp -d "${TMPDIR:-/tmp}/nodedance-agent-install.XXXXXXXX")
-# Resolve at execution time from the static version file published by the
-# release workflow. This keeps the installer on plain HTTPS downloads with no
-# GitHub REST API dependency or per-IP rate quota; --release-tag pins explicitly.
 if [[ -z "$release_tag" ]]; then
   release_tag=$(curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --tlsv1.2 \
     "$LATEST_VERSION_URL" 2>/dev/null | tr -d '[:space:]') \
@@ -221,9 +218,6 @@ prepare_state() {
 if [[ "$mode" == docker ]]; then
   image_repo="ghcr.io/cst-cat/nodedance-agent"
   image="$image_repo:$release_tag"
-  # Pin the image to the digest the release workflow recorded for this tag so
-  # a re-pushed tag cannot change the bytes. Releases published before the
-  # digest file existed fall back to the tag itself.
   digest_status=$(curl --silent --show-error --location --proto '=https' --proto-redir '=https' --tlsv1.2 --output "$tmp_dir/agent-image-digests.txt" --write-out '%{http_code}' "$LATEST_DIGESTS_URL" 2>/dev/null || true)
   pinned_digest=""
   if [[ "$digest_status" == 200 ]]; then

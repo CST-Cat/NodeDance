@@ -224,9 +224,6 @@ type DeploymentTask struct {
 	FinishedAt   *time.Time `json:"finishedAt,omitempty"`
 }
 
-// Coordinator is process-local for live SSH work. Task identity, idempotency,
-// state transitions, and audit records live only in the Core task store.
-// Credentials are captured only by the active goroutine and are never stored.
 type Coordinator struct {
 	mu          sync.Mutex
 	service     *Service
@@ -341,9 +338,6 @@ func (c *Coordinator) Start(ctx context.Context, request DeployRequest, idempote
 	c.mu.Lock()
 	if active := c.activePeers[peer.Identity]; active != nil {
 		c.mu.Unlock()
-		// A concurrent retry may have crossed the initial lookup just before
-		// the first executor committed its durable task. Recheck the authority
-		// store before reporting the peer as busy.
 		prior, found, lookupErr := tasks.FindLocalByIdempotency(ctx, idempotencyKey, intent)
 		if lookupErr != nil {
 			return DeploymentTask{}, lookupErr
@@ -414,9 +408,6 @@ func (c *Coordinator) Start(ctx context.Context, request DeployRequest, idempote
 		}
 		return DeploymentTask{}, err
 	case <-ctx.Done():
-		// If acceptance raced with the HTTP cancellation, return the durable
-		// task and let its executor continue independently. Otherwise cancel
-		// preflight before any remote install; the worker owns peer-lock cleanup.
 		select {
 		case result := <-acceptance:
 			if result.err == nil {

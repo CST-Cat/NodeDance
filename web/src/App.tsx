@@ -134,8 +134,6 @@ export default function App(input: Props) {
         handle.setPointerCapture(event.pointerId);
         const start = event.clientX,
           width = sidebarWidth.value;
-        // ArtifactsSplitPaneResizer behaviour: Escape mid-drag reverts the
-        // pane width to the value captured at drag start.
         const cancel = (next: KeyboardEvent) => {
           if (next.key !== "Escape") return;
           next.preventDefault();
@@ -159,9 +157,6 @@ export default function App(input: Props) {
         handle.addEventListener("pointermove", move);
         handle.addEventListener("lostpointercapture", stop);
       }
-      // Double-click snaps back to the untouched default pane width
-      // (ArtifactsSplitPaneResizer's 50/50 reset, adapted to the sidebar's
-      // 256px baseline).
       function resetSidebarWidth() {
         if (sidebarCollapsed.value || mobileNavigation.value) return;
         sidebarWidth.value = 256;

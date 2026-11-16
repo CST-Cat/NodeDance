@@ -42,7 +42,6 @@ func main() {
 }
 
 func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) (resultErr error) {
-	// Internal tmux child: preserve raw terminal bytes before language handling.
 	if len(args) > 0 && args[0] == "terminal-container" {
 		input, inputOK := stdin.(*os.File)
 		output, outputOK := stdout.(*os.File)
@@ -171,9 +170,6 @@ func runPrepareSystemdState(args []string, stdout, stderr io.Writer) error {
 	return nil
 }
 
-// runValidateFileRoot is a read-only target-side preflight for SSH deployment.
-// It deliberately calls the same validator used by foreground and systemd
-// Agent startup without creating configuration or consuming enrollment.
 func runValidateFileRoot(args []string, stdout, stderr io.Writer) error {
 	flags := newFlagSet("validate-file-root", stderr)
 	fileRoot := flags.String("file-root", "", i18n.TextFor(stderr, "absolute existing host directory exposed to the Agent file manager"))

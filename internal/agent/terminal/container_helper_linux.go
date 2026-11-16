@@ -17,9 +17,6 @@ import (
 	"golang.org/x/term"
 )
 
-// RunContainerShell is the fixed, root-only child process placed in a tmux pane.
-// It uses the existing Docker API provider; no Docker CLI or container-side
-// installation is required. Its stdin/stdout are terminal bytes, never i18n text.
 func RunContainerShell(ctx context.Context, id, capabilitiesJSON string, stdin, stdout *os.File) error {
 	if os.Geteuid() != 0 {
 		return errors.New("Agent terminal requires root")
@@ -42,8 +39,6 @@ func RunContainerShell(ctx context.Context, id, capabilitiesJSON string, stdin, 
 		request.Rows, request.Columns = size.Rows, size.Cols
 	}
 	provider := &SystemProvider{docker: engine.Client()}
-	// Keep the attached stream writable during signal cleanup. Cancelling it
-	// first would prevent Close from terminating the Docker Exec shell.
 	attachCtx, cancelAttach := context.WithCancel(context.Background())
 	defer cancelAttach()
 	endpoint, err := provider.openContainer(ctx, attachCtx, request)

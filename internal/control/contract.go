@@ -14,8 +14,6 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
 
-// Request tags describe input presence; encoding/json omission describes output
-// encoding and must not be used as request validation.
 func describeTransport(o *Operation) {
 	if o.Transport == "json" || o.Transport == "terminal" {
 		o.ResponseSchema = map[string]any{"type": "object"}

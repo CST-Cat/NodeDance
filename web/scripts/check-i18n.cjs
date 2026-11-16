@@ -21,7 +21,6 @@ function scan(dir) {
     else if (entry.isFile() && /\.(tsx?|ts)$/.test(file)) {
       const text = fs.readFileSync(file, 'utf8')
       for (const m of text.matchAll(/\bt\(['"]([^'"]+)['"]/g)) assert.ok(Object.hasOwn(en, m[1]), `${file}: unknown key ${m[1]}`)
-      // Endonyms are the sole literal Chinese UI strings; all other text lives in catalogs.
       assert.ok(!/\p{Script=Han}/u.test(text.replace('简体中文', '').replace(/['"]语言['"]/g, '')), `${file}: literal Chinese outside locale catalog`)
     }
   }

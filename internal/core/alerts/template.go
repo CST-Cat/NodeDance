@@ -19,8 +19,6 @@ var notificationTemplateFields = map[string]struct{}{
 	"subjectId": {}, "severity": {}, "message": {}, "occurredAt": {},
 }
 
-// parseMessageTemplate accepts literal text and {{fieldName}} substitutions.
-// It deliberately has no filters, conditionals, or recursive expansion.
 func parseMessageTemplate(template string) ([]templatePart, error) {
 	if len(template) > MaxMessageTemplateBytes {
 		return nil, fmt.Errorf("notification message template exceeds %d bytes", MaxMessageTemplateBytes)
@@ -63,8 +61,6 @@ func ValidateMessageTemplate(template string) error {
 	return err
 }
 
-// RenderMessageTemplate substitutes only allowlisted Notification fields.
-// Values are written once and never parsed as template source.
 func RenderMessageTemplate(template string, notification Notification) (string, error) {
 	if template == "" {
 		return notification.Message, nil

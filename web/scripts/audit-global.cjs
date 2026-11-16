@@ -1,4 +1,3 @@
-// Isolated real Core and protocol-only Agents. No production or remote controls.
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=require('node:net');
 const {spawn}=require('node:child_process'),{chromium}=require('playwright');
 const {setBrowserLanguage}=require('./browser-language.cjs');

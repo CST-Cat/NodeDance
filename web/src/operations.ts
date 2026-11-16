@@ -1,4 +1,3 @@
-// The connected Core owns this contract. All Web transports resolve names here.
 export interface BodySchema {
   description?: string
   anyOf?: BodySchema[]
@@ -47,15 +46,9 @@ export function schemaHasSecrets(schema?: BodySchema): boolean {
   return !!schema && (!!schema.writeOnly || Object.values(schema.properties ?? {}).some(schemaHasSecrets) || schemaHasSecrets(schema.items))
 }
 
-// Presence is different from a nonempty string. Untouched optional fields are
-// omitted; explicitly cleared fields and required strings retain "".
-// Decode numeric tokens before JS can round them. Big integers stay bigint in
-// typed contract fields and are written as JSON numbers, never quoted strings.
 export function parseExactJSON(raw: string): unknown {
   const decoded = JSON.parse(raw)
   if (!/\d{16}/.test(raw)) return decoded
-  // Scan strings iteratively: a repeated regex over multi-MiB escaped text
-  // can overflow the JS regex engine's stack even though JSON.parse accepts it.
   const tokens:string[]=[]
   for(let offset=0;offset<raw.length;){
     const character=raw[offset]!

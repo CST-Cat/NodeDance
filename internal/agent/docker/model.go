@@ -1,5 +1,3 @@
-// Package docker discovers and normalizes the local Docker Engine inventory.
-// It is read-only: user-authorized Engine mutations use the shared task path.
 package docker
 
 import (
@@ -9,8 +7,6 @@ import (
 	"time"
 )
 
-// HealthState is Docker's application health state. It is deliberately separate
-// from State: a running process does not imply a healthy application.
 type HealthState string
 
 const (
@@ -21,9 +17,6 @@ const (
 	HealthUnhealthy HealthState = "unhealthy"
 )
 
-// Container is the read-only, normalized view used by the Agent and Core.
-// Times are pointers because Docker uses an empty/zero timestamp for a
-// container that has never started or has no exit time.
 type Container struct {
 	ID                    string           `json:"id"`
 	Name                  string           `json:"name"`
@@ -52,9 +45,6 @@ type Container struct {
 	ObservedAt            time.Time        `json:"observed_at"`
 }
 
-// Port keeps image/container exposure, the requested host binding, and the
-// Engine's actual published binding distinct. Empty Published means Docker has
-// not confirmed a listening host port; EXPOSE alone can never appear published.
 type Port struct {
 	ContainerPort uint16     `json:"container_port"`
 	Protocol      string     `json:"protocol"`
@@ -89,9 +79,6 @@ type Mount struct {
 	ReadWrite   bool   `json:"read_write"`
 }
 
-// ComposeIdentity contains only the standard Compose labels needed to keep a
-// service associated with its project and source files. Arbitrary labels,
-// environment values, and inspect payloads never leave the Agent.
 type ComposeIdentity struct {
 	Project         string `json:"project"`
 	Service         string `json:"service"`
@@ -130,8 +117,6 @@ type Change struct {
 	ObservedAt  time.Time    `json:"observed_at"`
 }
 
-// Event is the small subset of a Docker event required for reconciliation.
-// Event attributes are never treated as authoritative container state.
 type Event struct {
 	ContainerID string
 	Action      string
@@ -157,9 +142,6 @@ type Health struct {
 	ObservedAt      time.Time          `json:"observed_at"`
 }
 
-// Batch is sent asynchronously to an Observer. FullSnapshot batches are
-// bounded to MaxBatchChanges entries. The receiver stages them by SnapshotID
-// and only replaces its active inventory after SnapshotFinal is true.
 type Batch struct {
 	Sequence      uint64   `json:"sequence"`
 	SnapshotID    uint64   `json:"snapshot_id,omitempty"`
@@ -170,9 +152,6 @@ type Batch struct {
 	Health        *Health  `json:"health,omitempty"`
 }
 
-// Observer receives bounded updates on a dedicated worker. Implementations
-// must honor ctx. Slow or failing observers cannot block Engine events or the
-// Agent's independent heartbeat loop; queue overflow causes a fresh snapshot.
 type Observer interface {
 	ApplyDockerBatch(ctx context.Context, batch Batch) error
 }

@@ -18,8 +18,6 @@ PROFILES = {
     'inter-400.woff2': ('3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62', (400, 700)),
     'jetbrains-mono-400.woff2': ('14425ba9c695763c1547f48a206b7aa60350a33ae23de09f0407877f3fcd89eb', 400),
 }
-# Preserve all printable ASCII for dynamic names, versions, paths and shell output,
-# Latin-1 accented text, and the punctuation used by both supported locales.
 UNICODES = set(range(0x20, 0x100)) | {
     0x131, 0x152, 0x153, 0x2BC, 0x2010, 0x2011, 0x2013, 0x2014,
     0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2026, 0x2032, 0x2033,
@@ -42,8 +40,6 @@ def main():
         font = TTFont(source)
         if 'fvar' in font:
             instantiateVariableFont(font, {'wght': weight}, inplace=True)
-        # Normalize glyph names after instancing; optimized HVAR can add fixed
-        # spacing glyphs whose lazy gvar keys still refer to the source order.
         font.recalcTimestamp = False
         normalized = io.BytesIO()
         font.save(normalized)
@@ -52,7 +48,6 @@ def main():
         options = subset.Options()
         options.layout_features = ['kern', 'liga', 'clig', 'calt', 'mark', 'mkmk', 'locl', 'tnum']
         if name.startswith('jetbrains'):
-            # The terminal draws individual cells and has no ligature addon.
             options.layout_features = ['kern', 'mark', 'mkmk', 'locl', 'tnum']
         options.name_IDs = [0, 1, 2, 3, 4, 5, 6, 13, 14]
         options.recalc_timestamp = False

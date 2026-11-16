@@ -1,7 +1,3 @@
-// Package history persists sparse, known-only metric aggregates. Missing and
-// failed readings create no row, so consumers can render a gap rather than a
-// fabricated zero. Hourly rollups retain sample sums and counts so averages
-// are weighted by the number of valid source samples.
 package history
 
 import (
@@ -168,8 +164,6 @@ func (s Store) Query(ctx context.Context, nodeID, resolution string, from, to ti
 	return s.query(ctx, nodeID, resolution, from, to, nil)
 }
 
-// QueryKeys uses the same aggregation and bounds as Query while avoiding reads
-// of unselected series for a guest projection.
 func (s Store) QueryKeys(ctx context.Context, nodeID, resolution string, from, to time.Time, keys []string) (Response, error) {
 	if len(keys) == 0 || len(keys) > 6 {
 		return Response{}, ErrInvalidQuery
@@ -249,7 +243,6 @@ func (s Store) query(ctx context.Context, nodeID, resolution string, from, to ti
 	for key := range series {
 		keys = append(keys, key)
 	}
-	// Stable output simplifies the client and acceptance evidence.
 	sort.Strings(keys)
 	out := make([]Series, 0, len(keys))
 	for _, key := range keys {

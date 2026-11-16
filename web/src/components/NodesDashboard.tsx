@@ -381,7 +381,6 @@ export default function NodesDashboard(input: Props) {
         try {
           const result = await api.nodePreferences(node.nodeId);
           if (disposed || preferenceRequests.get(node.nodeId) !== request || !nodes.value.some(item => item.nodeId === node.nodeId)) return;
-          // Merge after the await: parallel node reads must retain each other.
           nodePreferences.value = {
             ...nodePreferences.value,
             [node.nodeId]: result.preferences,

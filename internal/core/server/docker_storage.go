@@ -43,9 +43,6 @@ func persistDockerNode(ctx context.Context, db *sql.DB, saved coredocker.Persist
 		saved.Identity.NodeID, saved.Identity.AgentID, int64(saved.Generation), healthJSON, healthAt, saved.StaleReason, now.UnixNano()); err != nil {
 		return fmt.Errorf("persist Docker node state: %w", err)
 	}
-	// Incremental frames arrive far more often than containers change; diff
-	// against the stored inventory and write only the delta instead of
-	// rewriting every row per accepted frame.
 	stored := make(map[string]string, len(saved.Containers))
 	rows, err := tx.QueryContext(ctx, `SELECT container_id, record_json FROM docker_containers WHERE node_id=?`, saved.Identity.NodeID)
 	if err != nil {

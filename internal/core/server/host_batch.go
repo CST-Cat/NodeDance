@@ -283,8 +283,6 @@ func (s *Server) handleHostBatchAPI(w http.ResponseWriter, r *http.Request, curr
 			return true
 		}
 	}
-	// Recover accepted children even when Core lost the HTTP response before
-	// saving results. Derived identity is shared with Agent; never resubmit here.
 	known := map[string]hostBatchResult{}
 	for _, v := range b.Results {
 		known[v.NodeID] = v
@@ -335,7 +333,6 @@ func (s *Server) handleHostBatchAPI(w http.ResponseWriter, r *http.Request, curr
 		}(i, v)
 	}
 	wg.Wait()
-	// Outputs stay on the Agent; the Core retains only bounded job summaries.
 	summary := b
 	summary.Results = append([]hostBatchResult{}, b.Results...)
 	for i := range summary.Results {

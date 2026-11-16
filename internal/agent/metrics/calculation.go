@@ -12,10 +12,6 @@ import (
 	"github.com/shirou/gopsutil/v4/mem"
 )
 
-// CPUUsagePercent calculates aggregate Linux CPU utilization from cumulative
-// /proc/stat counters. Linux guest and guestNice are already included in user
-// and nice, so they are checked for resets but never added to the denominator.
-// Idle and iowait are both excluded from busy time.
 func CPUUsagePercent(previous, current cpu.TimesStat) (float64, string) {
 	if previous.CPU != current.CPU {
 		return 0, "cpu_set_changed"
@@ -32,7 +28,6 @@ func CPUUsagePercent(previous, current cpu.TimesStat) (float64, string) {
 		}
 		delta[i] = newer[i] - old[i]
 	}
-	// user + nice already contain guest + guestNice on Linux.
 	total := delta[0] + delta[1] + delta[2] + delta[3] + delta[4] + delta[5] + delta[6] + delta[7]
 	if total <= 0 || !finite(total) {
 		return 0, "no_counter_progress"

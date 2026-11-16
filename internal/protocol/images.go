@@ -13,8 +13,6 @@ const (
 	MaxImagePageSize      = 50
 )
 
-// ImageListRequest is a read-only Agent Engine query. Page bounds keep a
-// large host's inventory from consuming the shared heartbeat socket.
 type ImageListRequest struct {
 	Filter   string `json:"filter,omitempty"`
 	Page     uint32 `json:"page"`

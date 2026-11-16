@@ -89,8 +89,6 @@ func (b *Bridge) writeReport(ctx context.Context, writer EnvelopeWriter, generat
 	}
 	err := writer.Send(ctx, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeProbeReport,
 		Generation: generation, RequestID: report.RunID, Payload: mustMarshalProbe(report)})
-	// A completed report can race parent cancellation in Run's select. A
-	// write failure during shutdown must retain graceful cancellation semantics.
 	if ctx.Err() != nil {
 		return nil
 	}

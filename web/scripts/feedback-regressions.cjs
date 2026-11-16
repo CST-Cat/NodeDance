@@ -1,5 +1,3 @@
-// Presentation-only fixture: shared components receive real task-state shapes;
-// no Core/Agent mutation or updater execution is involved.
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path')
 module.exports=async function({page,base,artifacts}){
  const root=path.resolve(__dirname,'../..'),out=path.join(artifacts,'feedback-components'),entry=path.join(out,'entry.tsx');fs.mkdirSync(out,{recursive:true})

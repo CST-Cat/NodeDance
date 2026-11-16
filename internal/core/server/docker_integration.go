@@ -81,9 +81,6 @@ func (s *Server) runDockerFrames(ctx context.Context, connection *agentConnectio
 		case frame := <-connection.dockerFrames:
 			if err := s.acceptDockerFrame(ctx, identity, connection.generation, frame); err != nil {
 				if ctx.Err() != nil {
-					// A capability downgrade cancels the Docker worker while it may
-					// still be persisting the current frame. Cancellation is expected;
-					// the downgrade path marks the retained inventory stale afterward.
 					return
 				}
 				select {
@@ -108,9 +105,6 @@ func (s *Server) acceptDockerFrame(ctx context.Context, identity coredocker.Iden
 		s.dockerMu.Unlock()
 		return errors.New("Docker store is unavailable")
 	}
-	// Check the authenticated socket generation before inspecting the batch.
-	// In particular, an invalid payload already queued on a superseded socket
-	// must not make the newer generation's last-good inventory stale.
 	if err := current.ValidateConnection(identity, generation); err != nil {
 		s.dockerMu.Unlock()
 		return err
@@ -150,8 +144,6 @@ func (s *Server) acceptDockerFrame(ctx context.Context, identity coredocker.Iden
 			return err
 		}
 	}
-	// Adopt staged chunks too: they are private bounded state and are never
-	// visible through API/dashboard until the final chunk commits.
 	s.docker = candidate
 	s.dockerMu.Unlock()
 	if changed {

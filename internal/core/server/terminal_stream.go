@@ -164,9 +164,6 @@ func (s *Server) createTerminal(w http.ResponseWriter, r *http.Request, current 
 			return
 		}
 	}
-	// Serialize the final Session check and ticket creation with logout,
-	// revocation and password changes. A request authenticated just before a
-	// logout must not leave a fresh, usable terminal ticket behind it.
 	s.terminalSessionMu.Lock()
 	defer s.terminalSessionMu.Unlock()
 	if !s.dashboardSessionStillValid(r.Context(), current.ID) {
@@ -298,9 +295,6 @@ func (m *terminalStreamManager) find(streamID string) *terminalStream {
 	return m.streams[streamID]
 }
 
-// hasLiveConnection reports whether this Agent still owns an unexpired
-// terminal authorization or an active browser terminal session. Update
-// scheduling uses it as a point-in-time check before dispatching an update.
 func (m *terminalStreamManager) hasLiveConnection(connection *agentConnection, now time.Time) bool {
 	if m == nil || connection == nil {
 		return false
@@ -355,7 +349,6 @@ func (m *terminalStreamManager) handleAgentFrame(s *Server, connection *agentCon
 		m.mu.Unlock()
 		return
 	}
-	// Detached output belongs to tmux, which repaints when a new client attaches.
 	if stream.conn == nil {
 		m.mu.Unlock()
 		if frame.Action == protocol.TerminalActionClosed || frame.Action == protocol.TerminalActionError || frame.Action == protocol.TerminalActionExit {
@@ -369,7 +362,6 @@ func (m *terminalStreamManager) handleAgentFrame(s *Server, connection *agentCon
 	default:
 		cancel := stream.cancel
 		m.mu.Unlock()
-		// A slow transport reattaches to tmux rather than losing its shell.
 		if cancel != nil {
 			cancel()
 		}
@@ -629,8 +621,6 @@ func (s *Server) terminalAgentCurrent(stream *terminalStream) bool {
 	return current
 }
 
-// detach disconnects only the tmux client. tmux owns the shell and screen;
-// Agent idle expiry and authentication revocation remain authoritative.
 func (m *terminalStreamManager) detach(s *Server, stream *terminalStream, attachment uint64) {
 	m.mu.Lock()
 	if stream.closed || stream.attachment != attachment {
@@ -713,6 +703,5 @@ func (s *Server) resumeTerminal(w http.ResponseWriter, r *http.Request, current 
 	expires := stream.expires
 	s.terminals.mu.Unlock()
 	time.AfterFunc(terminalTicketLifetime, func() { s.terminals.expireTicket(key, stream) })
-	// A fresh ticket grants attachment only; it cannot create a new shell.
 	writeJSON(w, http.StatusCreated, createTerminalResponse{StreamID: streamID, Ticket: ticket, ExpiresAt: expires.UTC()})
 }

@@ -22,9 +22,7 @@ const imageListTimeout = 35 * time.Second
 const imageCredentialLifetime = 5 * time.Minute
 
 type pendingImageCredential struct {
-	nodeID string
-	// The Core-owned staged copy uses clearable buffers. API request strings and
-	// the single-use protocol payload are separately released at their handoff.
+	nodeID    string
 	username  []byte
 	password  []byte
 	expiresAt time.Time
@@ -214,8 +212,6 @@ func (s *Server) createImageTask(w http.ResponseWriter, r *http.Request, current
 	}
 	credentialsLocked := credentials != nil
 	if credentialsLocked {
-		// Match the dispatcher lock order so an Agent poll cannot claim this
-		// durable auth-required row before its one-use credential is installed.
 		s.imageAuthMu.Lock()
 		s.expireImageCredentialsLocked(s.now())
 	}
@@ -247,10 +243,6 @@ func (s *Server) createImageTask(w http.ResponseWriter, r *http.Request, current
 	writeJSON(w, status, map[string]any{"taskId": result.Task.TaskID, "status": result.Task.Status})
 }
 
-// claimNextImageTask keeps the availability check and the one-use credential
-// take under imageAuthMu. ClaimNextWithRegistryAuth commits delivery only when
-// this check succeeds; failed/expired entries are durably resolved before any
-// task frame can be written.
 func (s *Server) claimNextImageTask(ctx context.Context, connection coretasks.AgentConnection) (coretasks.Task, bool, *protocol.RegistryCredentials, error) {
 	s.imageAuthMu.Lock()
 	defer s.imageAuthMu.Unlock()

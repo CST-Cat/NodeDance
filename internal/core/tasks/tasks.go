@@ -1,6 +1,3 @@
-// Package tasks persists Core task intent before any caller can deliver it.
-// It has no HTTP, transport, or executor dependency; callers must apply their
-// own authentication and must only report results after querying Docker.
 package tasks
 
 import (
@@ -48,17 +45,11 @@ var (
 	ErrNotDelivered         = errors.New("task has not been durably marked for delivery")
 )
 
-// SchemaSQL is the current Core task schema fragment. The Core storage
-// initializer applies it as part of the current v0 database schema.
-//
 //go:embed schema.sql
 var schemaSQL string
 
 func SchemaSQL() string { return schemaSQL }
 
-// SchemaStatements returns the Core task statements for current-schema
-// initialization. The embedded SQL is split only on statement-ending
-// semicolons.
 func SchemaStatements() []string {
 	parts := strings.Split(schemaSQL, ";\n\n")
 	statements := make([]string, 0, len(parts))
@@ -94,34 +85,19 @@ const (
 	ActionContainerCreate = protocol.TaskContainerCreate
 )
 
-// Intent is the complete allowlisted, non-secret remote container command. No
-// arbitrary JSON or freeform error field is persisted. Credentials for future
-// registry or other secret-bearing actions need a separate encrypted,
-// one-use transport contract before those actions are added here.
 type Intent = protocol.TaskIntent
 
 type EnqueueRequest struct {
-	TaskID         string
-	NodeID         string
-	IdempotencyKey string
-	Intent         Intent
-	// RegistryAuthRequired is part of idempotency semantics for image pulls.
-	// The credential values themselves are one-use transport data and are never
-	// included in task identity or persistence.
+	TaskID               string
+	NodeID               string
+	IdempotencyKey       string
+	Intent               Intent
 	RegistryAuthRequired bool
-	// ComposeManaged must come from trusted Core asset state, never from an
-	// HTTP request boolean. The eventual authenticated route must overwrite any
-	// client value with the current Engine-derived classification.
-	ComposeManaged bool
-	ActorID        sql.NullInt64
-	RemoteAddr     string
+	ComposeManaged       bool
+	ActorID              sql.NullInt64
+	RemoteAddr           string
 }
 
-// EnqueueGate is evaluated only after Store has checked both the idempotency
-// key and task ID inside the write transaction. It supplies trusted,
-// connection-scoped acceptance facts for a genuinely new row. release is held
-// until the task, audit, and resource claim transaction commits or rolls back.
-// A retry or conflict never invokes the gate.
 type EnqueueGate func(context.Context) (composeManaged bool, release func(), err error)
 
 type Options struct {
@@ -168,8 +144,6 @@ const (
 	ResultUncertain                      ResultCode = "result_pending"
 )
 
-// Result has only bounded tokens, never a command, request body, credential,
-// or arbitrary error string.
 type Result struct {
 	Code             ResultCode
 	ObservedState    string
@@ -206,8 +180,6 @@ type AgentConnection struct {
 	JournalID            string
 }
 
-// AgentTask is a typed summary from the Agent journal. The caller must derive
-// terminal evidence from a fresh Docker inspection before applying it.
 type AgentTask struct {
 	TaskID         string
 	NodeID         string
@@ -221,10 +193,6 @@ type AgentTask struct {
 	Result         Result
 }
 
-// AgentTaskFromProtocol converts a bounded wire report to the Core's typed
-// transaction input. DeliveryCommitted is intentionally absent from the wire
-// DTO and therefore cannot be supplied here; applyAgentReportTx loads that
-// Core-owned evidence from the durable task row.
 func AgentTaskFromProtocol(report protocol.TaskReport) (AgentTask, error) {
 	digest, err := protocol.ParseDigest(report.RequestDigest)
 	if err != nil {
@@ -260,8 +228,6 @@ type Page struct {
 	NextCursor *Cursor
 }
 
-// AuditEvent is the allowlisted, secret-free history of one durable task.
-// It deliberately excludes request payloads, credentials, and free-form errors.
 type AuditEvent struct {
 	ID         int64
 	Event      string
@@ -294,17 +260,10 @@ func (s *Store) Enqueue(ctx context.Context, request EnqueueRequest) (EnqueueRes
 	})
 }
 
-// EnqueueWithGate performs idempotency lookup before evaluating new-task
-// readiness. The gate remains held through commit, so callers can pin a
-// synchronized Agent connection while the durable acceptance transaction is
-// committed without rejecting safe retries during journal synchronization.
 func (s *Store) EnqueueWithGate(ctx context.Context, request EnqueueRequest, gate EnqueueGate) (EnqueueResult, error) {
 	return s.enqueue(ctx, request, gate, false, false)
 }
 
-// EnqueueAndStartLocal commits acceptance and the Core executor's running
-// transition in one transaction. A failed start transition cannot leave a
-// queued local task or resource claim behind.
 func (s *Store) EnqueueAndStartLocal(ctx context.Context, request EnqueueRequest) (EnqueueResult, error) {
 	if request.Intent.Action != ActionAgentDeploy {
 		return EnqueueResult{}, ErrInvalidRequest
@@ -312,9 +271,6 @@ func (s *Store) EnqueueAndStartLocal(ctx context.Context, request EnqueueRequest
 	return s.enqueue(ctx, request, nil, true, true)
 }
 
-// FindLocalByIdempotency returns a prior Core-local task before an executor
-// performs any external work. A matching key with a different intent is a
-// conflict, just as it is during EnqueueAndStartLocal.
 func (s *Store) FindLocalByIdempotency(ctx context.Context, key string, intent Intent) (Task, bool, error) {
 	if ctx == nil || intent.Action != ActionAgentDeploy {
 		return Task{}, false, ErrInvalidRequest
@@ -343,9 +299,6 @@ func (s *Store) FindLocalByIdempotency(ctx context.Context, key string, intent I
 	return task, true, nil
 }
 
-// FindByIdempotency returns any prior Agent task for a node/key pair. Callers
-// use it only to preserve retries when a bounded one-use payload cache is full;
-// EnqueueWithGate remains the authority that validates the request digest.
 func (s *Store) FindByIdempotency(ctx context.Context, nodeID, key string) (Task, bool, error) {
 	if ctx == nil || !validTaskIdentifier(nodeID) || key == "" || len(key) > taskstate.MaxIdempotencyKeyBytes {
 		return Task{}, false, ErrInvalidRequest
@@ -360,9 +313,6 @@ func (s *Store) FindByIdempotency(ctx context.Context, nodeID, key string) (Task
 	return task, true, nil
 }
 
-// CheckLocalResourceAvailable fails before a Core-local executor performs
-// preflight or creates enrollment state when the same peer already has an
-// unresolved task claim. EnqueueAndStartLocal repeats this check atomically.
 func (s *Store) CheckLocalResourceAvailable(ctx context.Context, intent Intent) error {
 	if ctx == nil || intent.Action != ActionAgentDeploy {
 		return ErrInvalidRequest
@@ -514,8 +464,6 @@ func (s *Store) enqueue(ctx context.Context, request EnqueueRequest, gate Enqueu
 	nowNS := now.UnixNano()
 	deliveryState := "ready"
 	if local {
-		// Core-local tasks must never enter Agent ClaimNext or journal-loss
-		// reconciliation while the newly provisioned Agent connects.
 		deliveryState = "done"
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO core_tasks(task_id,node_id,idempotency_key,request_digest,accepted_generation,target_id,resource_key,action,intent_json,registry_auth_required,status,delivery_state,created_at_ns,updated_at_ns)
@@ -553,8 +501,6 @@ func (s *Store) enqueue(ctx context.Context, request EnqueueRequest, gate Enqueu
 		DeliveryState: deliveryState, CreatedAt: now, UpdatedAt: now, StartedAt: startedAt, Evidence: Evidence{ExecutionAttempted: startLocal}, Progress: progress}, Created: true}, nil
 }
 
-// CompleteLocal records a verified outcome from a Core-owned executor. Unknown
-// outcomes remain unresolved and retain their shared resource claim.
 func (s *Store) CompleteLocal(ctx context.Context, nodeID, taskID string, status taskstate.Status, observedState string, actorID sql.NullInt64, remoteAddr string) (Task, error) {
 	if ctx == nil || !validTaskIdentifier(nodeID) || !validTaskIdentifier(taskID) ||
 		(status != taskstate.Succeeded && status != taskstate.Failed && status != taskstate.Unknown) || !safeToken(observedState, 64) {
@@ -610,9 +556,6 @@ func (s *Store) CompleteLocal(ctx context.Context, nodeID, taskID string, status
 	return loadByTaskID(ctx, s.db, nodeID, taskID)
 }
 
-// MarkLocalUnknown records that a Core-local external operation reached its
-// executor but could not be durably resolved. It is idempotent for an already
-// unknown task and keeps the shared resource claim for manual inspection.
 func (s *Store) MarkLocalUnknown(ctx context.Context, nodeID, taskID string, actorID sql.NullInt64, remoteAddr string) (Task, error) {
 	if ctx == nil || !validTaskIdentifier(nodeID) || !validTaskIdentifier(taskID) {
 		return Task{}, ErrInvalidRequest
@@ -654,9 +597,6 @@ func (s *Store) MarkLocalUnknown(ctx context.Context, nodeID, taskID string, act
 	return loadByTaskID(ctx, s.db, nodeID, taskID)
 }
 
-// RecoverLocalTasks resolves Core-local provisioning tasks interrupted by a
-// Core restart. Queued means the executor had not started the external write;
-// running means its result must be inspected and cannot be retried blindly.
 func (s *Store) RecoverLocalTasks(ctx context.Context) error {
 	if ctx == nil {
 		return ErrInvalidRequest
@@ -717,18 +657,6 @@ func (s *Store) RecoverLocalTasks(ctx context.Context) error {
 	return nil
 }
 
-// ClaimNext uses the fail-closed no-credential policy. It durably marks a
-// deliverable task as sent before returning it to a transport caller, never
-// reclaims a sent task after disconnect, and leaves missing reports to the
-// existing reconciliation path.
-func (s *Store) ClaimNext(ctx context.Context, connection AgentConnection, actorID sql.NullInt64, remoteAddr string) (Task, bool, error) {
-	return s.ClaimNextWithRegistryAuth(ctx, connection, actorID, remoteAddr, nil)
-}
-
-// ClaimNextWithRegistryAuth commits one ready task for Agent delivery. An
-// authenticated image pull is failed before that commit if the caller cannot
-// prove its one-use credentials remain available. The credential itself never
-// crosses this storage boundary.
 func (s *Store) ClaimNextWithRegistryAuth(ctx context.Context, connection AgentConnection, actorID sql.NullInt64, remoteAddr string, credentialsAvailable func(Task) bool) (Task, bool, error) {
 	if !validConnection(connection) {
 		return Task{}, false, ErrInvalidRequest
@@ -799,10 +727,6 @@ func (s *Store) ClaimNextWithRegistryAuth(ctx context.Context, connection AgentC
 	return task, true, nil
 }
 
-// CancelUndelivered safely cancels only a queued task that Core has not
-// committed for Agent delivery. Once delivery may have occurred, the outcome
-// is uncertain and cancellation requires Agent-side termination evidence.
-// Repeating cancellation of the same proven-not-dispatched result is safe.
 func (s *Store) CancelUndelivered(ctx context.Context, nodeID, taskID string, actorID sql.NullInt64, remoteAddr string) (Task, error) {
 	if ctx == nil || !validTaskIdentifier(nodeID) || !validTaskIdentifier(taskID) {
 		return Task{}, ErrInvalidRequest
@@ -1033,12 +957,6 @@ func resolveRegistryCredentialsUnavailableTx(ctx context.Context, tx *sql.Tx, ta
 	return task, nil
 }
 
-// ReconcileAgentJournal applies Agent snapshots only when the durable journal
-// identity still matches. Missing entries never prove non-execution, even for
-// a complete snapshot or an unchanged JournalID: retention, restore, or local
-// history loss can remove records. Any sent task absent from a complete
-// snapshot is held for explicit reconciliation and is never automatically
-// requeued.
 func (s *Store) ReconcileAgentJournal(ctx context.Context, connection AgentConnection, reports []AgentTask, complete bool) (ReconcileResult, error) {
 	if !validConnection(connection) || len(reports) > MaxJournalTasks {
 		return ReconcileResult{}, ErrInvalidRequest
@@ -1134,10 +1052,6 @@ func (s *Store) ReconcileAgentJournal(ctx context.Context, connection AgentConne
 	return result, nil
 }
 
-// ResolveUncertainTask records a caller-supplied, independently verified
-// terminal outcome for a task held behind a journal-loss barrier. It still
-// passes the shared seven-state proof rules and releases the claim only after
-// a valid terminal transition.
 func (s *Store) ResolveUncertainTask(ctx context.Context, nodeID, taskID string, status taskstate.Status, evidence Evidence, result Result, actorID sql.NullInt64, remoteAddr string) error {
 	if nodeID == "" || taskID == "" || !taskstate.IsTerminal(status) || validateResult(status, result) != nil {
 		return ErrInvalidRequest
@@ -1173,8 +1087,6 @@ func (s *Store) ResolveUncertainTask(ctx context.Context, nodeID, taskID string,
 	return tx.Commit()
 }
 
-// CompleteJournalReplacement changes the trusted JournalID only after every
-// task marked for reconciliation has been resolved from actual resource state.
 func (s *Store) CompleteJournalReplacement(ctx context.Context, connection AgentConnection) error {
 	if !validConnection(connection) {
 		return ErrInvalidRequest
@@ -1221,8 +1133,6 @@ func (s *Store) Get(ctx context.Context, nodeID, taskID string) (Task, error) {
 	return task, nil
 }
 
-// GetByID retrieves a globally unique Core task for authenticated product
-// endpoints whose local executor does not have an Agent delivery route.
 func (s *Store) GetByID(ctx context.Context, taskID string) (Task, error) {
 	if ctx == nil || !validTaskIdentifier(taskID) {
 		return Task{}, ErrInvalidRequest
@@ -1234,10 +1144,6 @@ func (s *Store) GetByID(ctx context.Context, taskID string) (Task, error) {
 	return task, nil
 }
 
-// ListUnresolvedLocalAgentDeployments returns only Core-local Agent deployment
-// tasks that still own a resource claim. It is a view over the authoritative
-// Core task ledger, used to restore active and unknown deployments after a UI
-// or Core restart.
 func (s *Store) ListUnresolvedLocalAgentDeployments(ctx context.Context, limit int) ([]Task, error) {
 	if ctx == nil || limit < 1 || limit > MaxPageSize {
 		return nil, ErrInvalidRequest
@@ -1265,11 +1171,6 @@ func (s *Store) ListUnresolvedLocalAgentDeployments(ctx context.Context, limit i
 	return tasks, nil
 }
 
-// ReconciliationCandidates returns only Agent-reported unknown tasks whose
-// durable dispatch journal still matches this authenticated connection. Tasks
-// inferred missing from a complete snapshot set reconciliation_required and
-// are deliberately excluded: an absent journal entry is not proof that the
-// Agent can safely inspect or replay it.
 func (s *Store) ReconciliationCandidates(ctx context.Context, connection AgentConnection, limit int) ([]Task, error) {
 	if ctx == nil || !validConnection(connection) || limit < 1 || limit > MaxPageSize {
 		return nil, ErrInvalidRequest
@@ -1359,9 +1260,6 @@ func (s *Store) List(ctx context.Context, nodeID string, limit int, after *Curso
 	return page, nil
 }
 
-// AuditEvents returns the bounded sanitized audit trail for an existing task.
-// The node and task predicates are both required so task IDs cannot expose
-// another node's audit records.
 func (s *Store) AuditEvents(ctx context.Context, nodeID, taskID string) ([]AuditEvent, error) {
 	if ctx == nil || nodeID == "" || taskID == "" {
 		return nil, ErrInvalidRequest
@@ -1438,8 +1336,6 @@ func applyAgentReportTx(ctx context.Context, tx *sql.Tx, connection AgentConnect
 	if status != taskstate.Queued && status != taskstate.Running && status != taskstate.Unknown && !taskstate.IsTerminal(status) {
 		return Task{}, ErrTaskStateConflict
 	}
-	// Result fields are terminal-only. In particular, never persist arbitrary
-	// Agent strings from a progress report into the durable result columns.
 	switch status {
 	case taskstate.Queued, taskstate.Running:
 		if report.Result != (Result{}) {
@@ -1456,10 +1352,6 @@ func applyAgentReportTx(ctx context.Context, tx *sql.Tx, connection AgentConnect
 	if from == taskstate.Queued {
 		switch {
 		case status == taskstate.Queued:
-			// A durable Agent queue entry proves receipt but does not prove
-			// execution. Keep the Core task queued and sent; never dispatch it a
-			// second time. Agent queued records must not carry execution/result
-			// evidence or a terminal result.
 			if report.Evidence != (Evidence{}) || report.Result != (Result{}) {
 				return Task{}, ErrTaskStateConflict
 			}
@@ -1477,8 +1369,6 @@ func applyAgentReportTx(ctx context.Context, tx *sql.Tx, connection AgentConnect
 			from = taskstate.Running
 		case status == taskstate.Unknown:
 			if report.Evidence.ExecutionAttempted {
-				// A real Agent execution record may have lost its running ACK. Preserve
-				// that evidence as the intermediate status transition.
 				if err := persistNonterminalTx(ctx, tx, task, taskstate.Queued, taskstate.Running, merged, report.Progress, Result{}, now, true); err != nil {
 					return Task{}, err
 				}
@@ -1490,9 +1380,6 @@ func applyAgentReportTx(ctx context.Context, tx *sql.Tx, connection AgentConnect
 				if validComposeUnknownResult(task.Intent.Action, report.Result) {
 					return Task{}, ErrTaskStateConflict
 				}
-				// Core's committed dispatch marker proves only that the task may have
-				// reached Agent. It is Core-owned and is read from the durable row,
-				// never manufactured from an Agent report.
 				if err := taskstate.CanTransition(taskstate.Queued, taskstate.Unknown, task.Evidence); err != nil {
 					return Task{}, err
 				}
@@ -1518,8 +1405,6 @@ func applyAgentReportTx(ctx context.Context, tx *sql.Tx, connection AgentConnect
 			}
 			return loadByTaskID(ctx, tx, connection.NodeID, report.TaskID)
 		default:
-			// A terminal result may arrive before the running acknowledgement.
-			// Record running only when the Agent supplied durable attempt proof.
 			if err := persistNonterminalTx(ctx, tx, task, taskstate.Queued, taskstate.Running, merged, report.Progress, Result{}, now, true); err != nil {
 				return Task{}, err
 			}

@@ -1,5 +1,3 @@
-// Chromium's actual language preference survives reload. Dispatch the native
-// notification that a browser sends when its preferred languages change.
 const sessions=new WeakMap()
 async function setBrowserLanguage(page,language,expected=language.toLowerCase().startsWith('zh')?'zh-CN':'en'){
  let session=sessions.get(page)

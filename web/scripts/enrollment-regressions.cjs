@@ -1,6 +1,5 @@
 const {setBrowserLanguage}=require('./browser-language.cjs')
 const {closeNavigation,selectNodeSection}=require('./sidebar-navigation.cjs')
-// Real isolated Core enrollments; commands are inspected/copied, never executed.
 const assert=require('node:assert/strict'),path=require('node:path')
 module.exports=async function({page,base,artifacts,catalog}){
  const operation=catalog.operations.find(o=>o.name==='agents.enrollment');assert.ok(operation)
@@ -56,7 +55,6 @@ module.exports=async function({page,base,artifacts,catalog}){
 
   }
  }
- // Revisit a pending node after leaving the original command page.
  const pendingNode=issued.nodeId,oldToken=issued.token
  await setBrowserLanguage(page,'en')
  await page.goto(base+'/#/nodes?node='+pendingNode)
@@ -69,7 +67,6 @@ module.exports=async function({page,base,artifacts,catalog}){
  await confirmCopied();assert.ok((await copied()).includes('--token '+renewed.token))
  const replacement=await copied();await copy.click();assert.equal(await copied(),replacement)
  await copy.click();assert.equal(await copied(),replacement,'Pending command can be copied repeatedly')
- // Switching presentation preserves the same replacement credential.
  await page.getByTestId('agent-deployment-method').getByRole('button',{name:'Docker deployment',exact:true}).click()
  await copy.click();assert.ok((await copied()).includes('--mode docker')&&(await copied()).includes('--token '+renewed.token))
  await selectNodeSection(page,'Node settings')
@@ -89,7 +86,6 @@ module.exports=async function({page,base,artifacts,catalog}){
  await settings.getByTestId('asset-save').click();assert.equal((await clearResponse).status(),200);await settings.getByRole('status').waitFor()
  const cleared=await readAsset();assert.equal(cleared.purchasedAt,undefined);assert.equal(cleared.expiresAt,undefined);assert.equal(cleared.trafficLimitBytes,0n);assert.equal(cleared.price,0)
  assert.ok(await settings.evaluate(el=>el.nextElementSibling?.dataset.testid==='node-settings-delete'),'Billing settings immediately precede deletion')
- // Reopening registration after editing settings loads fresh asset values.
  await page.getByTestId('node-install-command').click()
  await page.getByTestId('agent-enrollment').getByTestId('asset-price').waitFor()
  assert.equal(await page.getByTestId('agent-enrollment').getByTestId('asset-price').inputValue(),'0')

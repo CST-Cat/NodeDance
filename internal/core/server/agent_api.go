@@ -223,9 +223,6 @@ func (s *Server) adminListAgents(w http.ResponseWriter, r *http.Request) {
 			leaseValidUntil := node.LastSeen.Add(s.agentOfflineTimeout)
 			view.LastSeen = node.LastSeen.UTC().Format(time.RFC3339Nano)
 			view.LeaseValidUntil = leaseValidUntil.UTC().Format(time.RFC3339Nano)
-			// Persisted status is materialized asynchronously by the lease watcher
-			// and sweeper. The API must never present an expired heartbeat lease as
-			// currently online while that cleanup is pending.
 			if view.Status == "online" && (serverTime.Before(node.LastSeen) || !serverTime.Before(leaseValidUntil)) {
 				view.Status = "offline"
 			}

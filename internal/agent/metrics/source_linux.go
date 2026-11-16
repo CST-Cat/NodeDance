@@ -121,7 +121,6 @@ func (gopsutilSource) linkMetadata(name string) (linkMetadata, error) {
 			meta.upperLinks = append(meta.upperLinks, strings.TrimPrefix(entry.Name(), "upper_"))
 		}
 	}
-	// ReadDir orders entries lexically, so topology slices are deterministic.
 	return meta, nil
 }
 

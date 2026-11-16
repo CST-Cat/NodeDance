@@ -1,6 +1,3 @@
-// Package files provides the Agent-side, root-confined filesystem operations
-// used by the remote file API. Transfer methods write to sibling
-// temporary files and never buffer a full upload in memory.
 package files
 
 import (
@@ -39,20 +36,13 @@ var (
 const defaultTransferLimit int64 = protocol.DefaultFileLimit
 
 type Service struct {
-	root        *os.File
-	limit       int64
-	blockedPath []string
-	// afterAtomicReplace is a package-test fault-injection hook for the
-	// otherwise hard-to-reproduce post-commit verification failure path.
+	root               *os.File
+	limit              int64
+	blockedPath        []string
 	afterAtomicReplace func()
-	// afterTextRead lets package tests reproduce path replacement between
-	// reading content and returning its optimistic-write version.
-	afterTextRead func()
+	afterTextRead      func()
 }
 
-// MutationBaseline stores opaque metadata fingerprints only. It lets recovery
-// distinguish a requested postcondition from the pre-existing state without
-// persisting file contents.
 type MutationBaseline struct {
 	TargetExists       bool
 	TargetFingerprint  string
@@ -160,10 +150,6 @@ func (s *Service) isBlocked(virtual string) bool {
 	return false
 }
 
-// All file roots use openat2 and pinned parent directory descriptors for each
-// operation. RESOLVE_NO_SYMLINKS makes the special-path and credential checks
-// atomic with path resolution, so a concurrent symlink swap cannot redirect an
-// operation into a protected path inside the host root.
 func (s *Service) open(name string) (*os.File, error) {
 	return s.openAtRoot(name, unix.O_RDONLY, 0)
 }
@@ -532,8 +518,6 @@ func (s *Service) ReadText(virtual string) (string, string, error) {
 	if s.afterTextRead != nil {
 		s.afterTextRead()
 	}
-	// Bind the version to exactly the bytes returned from this opened file.
-	// Reopening the path can hash a replacement the user has never read.
 	h := fileVersionHash(info)
 	_, _ = h.Write(data)
 	return string(data), hex.EncodeToString(h.Sum(nil)), nil
@@ -624,9 +608,6 @@ func (s *Service) pathFingerprint(name string) (bool, string, error) {
 	return true, hex.EncodeToString(digest[:]), nil
 }
 
-// VerifyMutation checks the requested postcondition without retaining or
-// returning file bytes. It is used after a reconnect when the Agent journal
-// proves that a write was started but the response was not persisted.
 func (s *Service) VerifyMutation(operation, virtual, newVirtual string, expectedSize int64, expectedSHA256 string, baseline MutationBaseline) (bool, error) {
 	name, canonical, err := s.normalize(virtual)
 	if err != nil {
@@ -753,9 +734,6 @@ func (s *Service) BeginUpload(virtual, expectedVersion string, size int64, diges
 	return s.BeginUploadAtTemporary(virtual, expectedVersion, size, digest, temporary)
 }
 
-// ReserveUploadTemporaryPath chooses an unpredictable sibling name without
-// creating it. The Agent journals this exact name before BeginUploadAtTemporary
-// can create a file, so a crash immediately after creation can be cleaned up.
 func (s *Service) ReserveUploadTemporaryPath(virtual string) (string, error) {
 	target, _, err := s.normalize(virtual)
 	if err != nil || target == "." {
@@ -828,9 +806,6 @@ func validUploadTempName(targetBase, temporaryBase string) bool {
 	return true
 }
 
-// RemoveUploadTemporary removes only a temporary upload path that was returned
-// by this service and durably recorded by the Agent journal. It never scans a
-// user directory or removes files based on a broad prefix.
 func (s *Service) RemoveUploadTemporary(targetVirtual, temporaryVirtual string) error {
 	target, _, err := s.normalize(targetVirtual)
 	if err != nil || target == "." {
@@ -940,10 +915,6 @@ func (u *Upload) CommitWithDigest(expectedDigest string) (protocol.FileEntry, er
 		}
 	}
 	if u.initialInfo == nil {
-		// A prior Lstat is not enough: another process could create the target
-		// before the rename and an ordinary rename would replace it. Creating a hard
-		// link is atomic and fails with EEXIST instead of overwriting. The temp
-		// file is a sibling, so it is on the same filesystem as the target.
 		if err := u.service.linkNoReplace(u.temporary, u.target); err != nil {
 			return protocol.FileEntry{}, err
 		}
@@ -1152,6 +1123,3 @@ func (s *Service) newSiblingTemporaryName(target, prefix string) (string, error)
 	}
 	return path.Join(directory, "."+base+prefix+hex.EncodeToString(random[:])), nil
 }
-
-// ownerIDs uses the platform's stat owner when available. The helper is kept
-// in a separate file on non-Unix ports; NodeDance Agents are deployed to Linux.

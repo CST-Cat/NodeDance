@@ -29,8 +29,6 @@ CREATE TABLE IF NOT EXISTS browser_sessions (
 	remote_addr TEXT NOT NULL
 );
 
--- A session policy is recorded at authenticated creation, never inferred from
--- later request headers. Revoking the session also removes its policy.
 CREATE TABLE IF NOT EXISTS persistent_sessions (
 	session_id TEXT PRIMARY KEY REFERENCES browser_sessions(id) ON DELETE CASCADE
 );
@@ -454,7 +452,6 @@ CREATE TABLE IF NOT EXISTS agent_enrollment_grants (
  created_at INTEGER NOT NULL
 );
 
--- Guest publication is independent from private dashboard visibility.
 CREATE TABLE IF NOT EXISTS guest_display (
  id INTEGER PRIMARY KEY CHECK(id=1),
  revision INTEGER NOT NULL,
@@ -538,10 +535,6 @@ CREATE TABLE IF NOT EXISTS observation_epoch (
  started_at INTEGER NOT NULL
 );
 
--- Private keys and DNS tokens never appear in inventory JSON. DNS provider
--- tokens, certificate private keys and ACME account keys are sealed at rest
--- with AES-GCM under the certificate-encryption.key file; the enclosing
--- SQLite database and backups are owner-protected (0600, state directory 0700).
 CREATE TABLE IF NOT EXISTS managed_domains (
  id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, label TEXT NOT NULL, notes TEXT NOT NULL,
  revision INTEGER NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL

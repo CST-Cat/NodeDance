@@ -89,7 +89,6 @@ func OpenStore(ctx context.Context, path string) (*Store, error) {
 	if err != nil || !fileInfo.Mode().IsRegular() || fileInfo.Mode().Perm()&0077 != 0 {
 		return nil, errors.New("container rebuild database must be a private regular file")
 	}
-	// Reject unsafe existing sidecars before SQLite can read or modify them.
 	for _, sidecar := range []string{absolute + "-wal", absolute + "-shm"} {
 		if err := secureSidecar(sidecar); err != nil {
 			return nil, err
@@ -291,5 +290,4 @@ const schemaSQL = `CREATE TABLE IF NOT EXISTS container_rebuilds (
 		updated_at_ns INTEGER NOT NULL
 	) WITHOUT ROWID`
 
-// Schema is the current durable container rebuild state contract.
 func Schema() string { return schemaSQL }

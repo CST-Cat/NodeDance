@@ -1,17 +1,11 @@
-// Package protocol contains the versioned enrollment, identity, and control
-// wire contract shared by the Core and outbound Agents.
 package protocol
 
 import "encoding/json"
 
 const (
-	// CurrentVersion is incremented when an incompatible wire change is made.
-	CurrentVersion = 1
-	// MinimumVersion is the oldest wire version accepted by Core.
-	MinimumVersion = 1
-	// MaxMessageBytes bounds every Agent WebSocket frame before JSON decoding.
-	MaxMessageBytes = 16 << 20
-	// HeartbeatInterval is the Agent's default heartbeat period.
+	CurrentVersion           = 1
+	MinimumVersion           = 1
+	MaxMessageBytes          = 16 << 20
 	HeartbeatIntervalSeconds = 5
 	OfflineAfterSeconds      = 30
 )
@@ -29,15 +23,10 @@ const (
 	TypeRotateAccepted = "rotate_accepted"
 	TypeProtocolError  = "error"
 
-	// Terminal messages are multiplexed over the existing authenticated,
-	// generation-bound Agent socket. They never carry an arbitrary command.
 	TypeTerminalFrame  = "terminal_frame"
 	CapabilityTerminal = "agent.terminal.v1"
 )
 
-// Envelope is the only top-level JSON shape accepted on the Agent channel.
-// Generation is assigned by Core after a successful authenticated hello; the
-// Agent echoes it, while Core independently checks its connection-local value.
 type Envelope struct {
 	Version    int             `json:"version"`
 	Type       string          `json:"type"`
@@ -75,8 +64,6 @@ type Welcome struct {
 }
 
 type Heartbeat struct {
-	// Capabilities reports the live capability set. An empty array disables
-	// all optional capabilities; nil leaves the negotiated set unchanged.
 	Capabilities []string `json:"capabilities"`
 }
 

@@ -1,6 +1,3 @@
-// Real Core + browser behavior checks. The isolated Core has no Agent and no
-// privileged update/deployment service. Synthetic routes test transport loss
-// and future operation discovery without performing host-side effects.
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const os = require('node:os')
@@ -68,8 +65,6 @@ async function port() {
     await require('./alert-center-regressions.cjs')({page,context,base,node,headers,catalog})
     const updateChecks=await require('./update-center-regressions.cjs')({page,base,artifacts})
     await require('./host-management-regressions.cjs')({page,context,base,node,headers,catalog})
-    // Real browser Back/Forward and reload must restore views and tabs without
-    // repeating the mutations exercised earlier in this fixture.
     await page.getByRole('button',{name:'Alerts',exact:true}).click()
     await page.locator('.alerts-page').waitFor();assert.equal(new URL(page.url()).hash,'#/alerts')
     await page.getByRole('tab',{name:'Alert rules',exact:true}).click()

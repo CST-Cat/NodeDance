@@ -39,9 +39,9 @@ make deps
 make build
 ```
 
-The binaries are written to `.build/nodedance` and `.build/nodedance-agent`. `make check` runs the frontend checks and Go tests. `sudo make install` installs only the Core binary; `sudo make install-agent` explicitly installs the Agent binary. Both targets copy an existing build to `$(PREFIX)/bin` (default `/usr/local/bin`) without rebuilding as root. `DESTDIR` can stage the install for packaging.
+The binaries are written to `.build/nodedance` and `.build/nodedance-agent`. `make check` runs the frontend checks and Go compile checks. `sudo make install` installs only the Core binary; `sudo make install-agent` explicitly installs the Agent binary. Both targets copy an existing build to `$(PREFIX)/bin` (default `/usr/local/bin`) without rebuilding as root. `DESTDIR` can stage the install for packaging.
 
-二进制输出到 `.build/nodedance` 与 `.build/nodedance-agent`。`make check` 运行前端检查与 Go 测试。`sudo make install` 仅安装 Core 二进制；`sudo make install-agent` 显式安装 Agent 二进制。两个目标都把既有构建复制到 `$(PREFIX)/bin`（默认 `/usr/local/bin`），不会以 root 重新构建。`DESTDIR` 可为打包暂存安装。
+二进制输出到 `.build/nodedance` 与 `.build/nodedance-agent`。`make check` 运行前端检查与 Go 编译级检查。`sudo make install` 仅安装 Core 二进制；`sudo make install-agent` 显式安装 Agent 二进制。两个目标都把既有构建复制到 `$(PREFIX)/bin`（默认 `/usr/local/bin`），不会以 root 重新构建。`DESTDIR` 可为打包暂存安装。
 
 To install the latest published Core release on Linux amd64 or arm64: / 在 Linux amd64 或 arm64 上安装最新已发布的 Core 版本：
 

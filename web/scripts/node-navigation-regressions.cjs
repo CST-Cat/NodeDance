@@ -17,8 +17,6 @@ module.exports=async function({page,base,node,artifacts,headers,catalog}){
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'390px layout must not overflow after footer removal')
 
  await page.setViewportSize({width:1440,height:1000})
- // Divider behaviours ported from ArtifactsSplitPaneResizer: double-click
- // snaps back to the default width and Escape reverts an in-progress drag.
  await resize.dblclick()
  assert.equal(await resize.getAttribute('aria-valuenow'),'256','Double-click resets the sidebar to its default width')
  const sepBox=await resize.boundingBox()
@@ -33,9 +31,6 @@ module.exports=async function({page,base,node,artifacts,headers,catalog}){
  assert.equal(await resize.getAttribute('aria-valuenow'),'256','Escape also ends the drag capture')
  await page.mouse.up()
  await page.waitForFunction(()=>document.querySelector('.app-shell').dataset.sidebarResizing==='false')
- // A fresh pointer drag after Escape must still work. Use a clear travel
- // distance and leave the browser's double-click window so this tests drag
- // semantics rather than being classified as another click.
  await page.waitForTimeout(550)
  const freshBox=await resize.boundingBox(),freshPoint={x:freshBox.x+freshBox.width/2,y:freshBox.y+freshBox.height/2}
  await page.mouse.move(freshPoint.x,freshPoint.y)

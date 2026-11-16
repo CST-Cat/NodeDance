@@ -1,7 +1,5 @@
 const {setBrowserLanguage}=require('./browser-language.cjs')
 const {closeNavigation}=require('./sidebar-navigation.cjs')
-// Presentation checks use a real isolated Core contract and synthetic Docker
-// responses. Every mutation is intercepted; no Docker daemon or Agent is used.
 const assert = require('node:assert/strict'), path = require('node:path')
 module.exports = async function ({page, base, node, artifacts, catalog}) {
   const errors=[];const collectError=error=>errors.push(error.message);page.on('pageerror',collectError)

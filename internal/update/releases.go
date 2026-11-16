@@ -71,9 +71,6 @@ type githubRelease struct {
 }
 
 const (
-	// Version file published by the release workflows on main. Resolving the
-	// latest tag through it keeps update checks on plain HTTPS downloads and
-	// away from the GitHub REST API's per-IP rate limits.
 	latestVersionURL = "https://raw.githubusercontent.com/" + Repository + "/main/%s-latest.txt"
 	releaseBaseURL   = "https://github.com/" + Repository + "/releases/download/"
 )
@@ -95,8 +92,6 @@ func (g *GitHub) Resolve(ctx context.Context, component, tag string) (Release, e
 			return Release{}, errors.New("the published version file does not contain a valid stable " + component + " tag")
 		}
 	}
-	// A pinned or resolved tag needs no release metadata: the update
-	// transaction verifies integrity through the tag's SHA256SUMS asset.
 	selected := githubRelease{Tag: tag, URL: "https://github.com/" + Repository + "/releases/tag/" + tag}
 	release := Release{Component: component, Version: selected.Tag, URL: selected.URL}
 	binary := "nodedance-linux-" + runtime.GOARCH

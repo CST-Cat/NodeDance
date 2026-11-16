@@ -9,9 +9,6 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
 
-// socketDockerObserver translates the discovery component's safe DTO into
-// generation-bound WebSocket frames. The writer queue is bounded FIFO; it
-// never coalesces snapshot chunks.
 type socketDockerObserver struct {
 	writer                *socketEnvelopeWriter
 	generation            uint64

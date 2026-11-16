@@ -43,8 +43,6 @@ func addConnectionFlags(f *flag.FlagSet, lookup LookupEnv) connectionFlags {
 	}
 }
 
-// timeoutExplicit reports whether the user set --timeout on this invocation;
-// an explicit value also bounds interactive and streaming operations.
 func (f connectionFlags) timeoutExplicit() bool {
 	explicit := false
 	f.flags.Visit(func(flag *flag.Flag) {
@@ -55,10 +53,6 @@ func (f connectionFlags) timeoutExplicit() bool {
 	return explicit
 }
 
-// defaultTimeoutApplies reports whether the default connection timeout bounds
-// this execution: only finite JSON request/response exchanges. Interactive
-// terminals, JSONL and websocket streams, transfers and completion observation
-// legitimately outlive it and are bounded only by an explicit --timeout.
 func defaultTimeoutApplies(o control.Operation, interactive, wait bool) bool {
 	if interactive || wait {
 		return false
@@ -481,8 +475,6 @@ func runAgentCommand(ctx context.Context, args []string, stdin io.Reader, stdout
 	if len(args) > 0 && args[0] == "update" {
 		return update.Local(ctx, "agent", "/var/lib/nodedance-agent", args[1:], stdin, stdout, stderr)
 	}
-	// Prefer a colocated Agent so a local build or extracted distribution is
-	// not shadowed by an unrelated executable on PATH. Agent stays separate.
 	path := ""
 	if exe, err := os.Executable(); err == nil {
 		candidate := filepath.Join(filepath.Dir(exe), "nodedance-agent")

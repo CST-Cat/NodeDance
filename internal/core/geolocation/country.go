@@ -1,4 +1,3 @@
-// Package geolocation resolves only public node IPs. No browser calls a third party.
 package geolocation
 
 import (
@@ -59,8 +58,6 @@ func PublicIP(value string) string {
 	return ip.String()
 }
 
-// Lookup never waits for an external request. Cached results are shared across
-// nodes, bounded to 1,000 IPs and 1,000 requests per rolling day, with four workers.
 func (r *Resolver) Lookup(value string) Country {
 	ip := PublicIP(value)
 	if ip == "" {

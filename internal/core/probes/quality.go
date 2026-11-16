@@ -25,8 +25,6 @@ type Quality struct {
 	Errors            map[string]int `json:"errors"`
 }
 
-// Quality counts only completed network attempts in the failure denominator;
-// offline, scheduler and capacity gaps are reported separately as unknown.
 func (s *Store) Quality(ctx context.Context, id string, from, to time.Time) (Quality, error) {
 	q := Quality{ProbeID: id, From: from, To: to, Errors: map[string]int{}}
 	config, err := s.Get(ctx, id)

@@ -18,7 +18,7 @@ function savedLanguagePreference(): LanguagePreference {
   try {
     const saved = localStorage.getItem(preferenceKey);
     if (saved === "en" || saved === "zh-CN") return saved;
-  } catch { /* Browser preferences still work without local storage. */ }
+  } catch {}
   return "system";
 }
 const browserLanguage = signal<Locale>(browserLocale());
@@ -89,7 +89,7 @@ export function initI18n(): Promise<void> {
 
 export function setLanguagePreference(value: LanguagePreference) {
   languagePreference.value = value;
-  try { localStorage.setItem(preferenceKey, value); } catch { /* In-memory preference. */ }
+  try { localStorage.setItem(preferenceKey, value); } catch {}
   void loadCatalog(locale.value);
 }
 if (typeof window !== "undefined") {
@@ -107,22 +107,17 @@ effect(() => {
 export function t(key: string, values: Record<string, unknown> = {}): string {
   void catalogEpoch.value;
   const message = catalogs[locale.value]?.[key] ?? catalogs.en?.[key] ?? catalogs["zh-CN"]?.[key] ?? key;
-  // Numeric slots cannot consume webhook template fields such as {{event}}.
   return message.replace(/(?<!\{)\{(\d+)\}(?!\})/g, (token, name: string) =>
     Object.hasOwn(values, name) ? String(values[name]) : token,
   );
 }
 
-// Public Core diagnostics are translated at presentation time. Unknown host,
-// Docker, or third-party diagnostics remain intact for troubleshooting.
 export function diagnostic(message: string): string {
   void catalogEpoch.value;
   const key = diagnosticKeys.get(message);
   return key ? t(key) : message;
 }
 
-// Localized notices may have been created before a language switch. Translate
-// only presentation messages here; never apply this to names or terminal/file data.
 export function display(message: string | null | undefined): string {
   if (!message) return "";
   void catalogEpoch.value;

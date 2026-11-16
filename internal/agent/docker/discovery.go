@@ -85,15 +85,10 @@ func NewDiscoverer(engine Engine, observer Observer, options Options) (*Discover
 	return d, nil
 }
 
-// Current returns a copy of the last known inventory and Docker health. If
-// Docker is unavailable the inventory is retained and health says so.
 func (d *Discoverer) Current() ([]Container, Health) {
 	return d.cache.view()
 }
 
-// Run starts event following, bounded reconciliation, periodic complete
-// snapshots, health checks, and asynchronous observer delivery. It returns
-// only after ctx is canceled and never takes part in Agent heartbeats.
 func (d *Discoverer) Run(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("context is required")
@@ -147,8 +142,6 @@ func (d *Discoverer) Run(ctx context.Context) error {
 		case status := <-eventStatuses:
 			d.cache.setEventStatus(status.connected, status.err)
 			d.bus.publishHealth(d.cache.healthSnapshot())
-			// Subscribe before reconciling so changes during the snapshot are
-			// either in the event stream or represented in its full inventory.
 			requestScan(scanRequests)
 		case err := <-pingResults:
 			if err != nil {
@@ -304,9 +297,6 @@ func (d *Discoverer) eventSupervisor(ctx context.Context, output chan<- Event, s
 		if ctx.Err() != nil {
 			return
 		}
-		// OpenEvents receives the run context because the SDK request context
-		// also owns the long-lived stream after its response headers arrive.
-		// SDKEngine bounds only that header wait with ResponseHeaderTimeout.
 		stream, err := d.engine.OpenEvents(ctx)
 		if err != nil {
 			postEventStatus(ctx, statuses, false, err)
@@ -770,9 +760,6 @@ func (c *stateCache) setPingResult(err error) {
 		c.health.Reason = safeError(err)
 	}
 	c.finishHealthMutation(before)
-	// A health result doubles as a bounded freshness lease. Advance the
-	// discovery watermark even when the Engine state is unchanged so Core can
-	// refresh its receive-time lease without refreshing container revisions.
 	if c.sequence == beforeSequence {
 		c.sequence++
 	}

@@ -1,5 +1,3 @@
-// Package taskstate defines the task contract shared by Core and Agent.
-// It has no persistence, transport, or executor dependencies.
 package taskstate
 
 import (
@@ -42,9 +40,6 @@ var (
 	ErrCancellationRequested = errors.New("task cancellation was explicitly requested")
 )
 
-// Identity contains only stable identifiers and the request body used to
-// calculate the deduplication digest. Payload is never stored by the journal.
-// Callers must not put credentials or other secrets in a persisted summary.
 type Identity struct {
 	TaskID         string
 	NodeID         string
@@ -55,13 +50,6 @@ type Identity struct {
 	Payload        json.RawMessage
 }
 
-// RequestDigest validates and canonically hashes a request. JSON object keys
-// are sorted by encoding/json, duplicate keys are rejected, and numeric tokens
-// preserve their valid original JSON spelling (for example, 1 and 1.0 have
-// different digests). Numeric token size, digit count, and exponent are
-// bounded. The idempotency key and task ID are excluded: they identify the
-// ledger entry, while the remaining request content determines whether a
-// replay is equal.
 func RequestDigest(identity Identity) ([sha256.Size]byte, error) {
 	var zero [sha256.Size]byte
 	if !validIdentifier(identity.TaskID) || !validIdentifier(identity.NodeID) ||
@@ -118,10 +106,6 @@ func validContainerCreateIdentity(identity Identity) bool {
 	return true
 }
 
-// CanonicalJSON returns a deterministic JSON encoding of a bounded request
-// body. Duplicate object keys are rejected rather than silently choosing one.
-// Numeric spellings are preserved exactly instead of converting through
-// float64, so large integer and decimal values do not lose precision.
 func CanonicalJSON(raw []byte) ([]byte, error) {
 	if len(raw) == 0 || len(raw) > MaxRequestBytes || !utf8.Valid(raw) {
 		return nil, errors.New("JSON body is empty, oversized, or invalid UTF-8")
@@ -282,10 +266,7 @@ type Evidence struct {
 	ProcessTerminated     bool
 	ActualResultConfirmed bool
 	CancellationConfirmed bool
-	// DeliveryCommitted means Core durably committed an outbound delivery
-	// attempt before writing to the Agent connection. It does not claim that
-	// the Agent received the task or entered its executor.
-	DeliveryCommitted bool
+	DeliveryCommitted     bool
 }
 
 func (e Evidence) validate(status Status, from Status) error {
@@ -320,7 +301,6 @@ func (e Evidence) validate(status Status, from Status) error {
 	case Unknown:
 		switch from {
 		case Running:
-			// The Agent durably recorded execution before entering its executor.
 		case Queued:
 			if !e.DeliveryCommitted {
 				return errors.New("a queued task requires committed Core delivery before it can become unknown")

@@ -237,10 +237,6 @@ func (s *Server) freshComposeProject(r *http.Request, nodeID, projectKey string)
 			return state, view, connection, project, true
 		}
 	}
-	// A Compose project registration and its source files outlive its containers.
-	// Resolve only the exact node-scoped project key saved by Core; never accept a
-	// working directory or config path from the Web request. Ask this live Agent
-	// to prove each registered file still exists at its canonical path.
 	registered, err := s.composeProjects.Projects(r.Context(), nodeID)
 	if err != nil {
 		return state, view, connection, protocol.ComposeProject{}, false
@@ -353,8 +349,6 @@ func (s *Server) handleCreateComposeTask(w http.ResponseWriter, r *http.Request,
 	}
 	contentLocked := action == protocol.TaskComposeSave
 	if contentLocked {
-		// Keep the dispatcher from claiming a durable save task before its
-		// one-use content body has been installed in memory.
 		s.composeContentMu.Lock()
 		s.expireComposeContentLocked()
 		_, knownRetry, lookupErr := s.tasks.FindByIdempotency(r.Context(), nodeID, key)

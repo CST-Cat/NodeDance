@@ -1,4 +1,3 @@
-// Package i18n localizes presentation text without changing wire identifiers or data.
 package i18n
 
 import (
@@ -58,8 +57,6 @@ func Parse(s string) (Locale, error) {
 	}
 }
 
-// Options handles the global option before command-specific flags. Everything
-// after -- is application data and must be left untouched.
 func Options(ctx context.Context, args []string, lookup func(string) (string, bool)) (context.Context, []string, error) {
 	l := From(ctx)
 	cliLanguage := false
@@ -127,7 +124,6 @@ func TextFor(w io.Writer, s string) string {
 	return s
 }
 
-// LocalizedError keeps the original cause available to errors.Is/As.
 type localizedError struct {
 	cause error
 	text  string

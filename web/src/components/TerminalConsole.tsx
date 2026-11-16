@@ -47,7 +47,6 @@ export default function TerminalConsole(input: Props) {
       let previousFocus: HTMLElement | null = null;
       let previousOverflow = "";
       function handleDialogKey(event: KeyboardEvent) {
-        // Terminal keystrokes (including Escape and Tab) belong to the remote shell.
         if ((event.target as HTMLElement).closest(".terminal-screen")) return;
         if (event.key === "Escape") {
           event.preventDefault();
@@ -166,7 +165,6 @@ export default function TerminalConsole(input: Props) {
       }
       function endSession(nodeId: string, id: string) {
         if (!id) return;
-        // End the exact session even when its socket is reconnecting.
         void api.cancelTerminal(nodeId, id).catch(() => undefined);
       }
       function dispose() {
@@ -206,8 +204,6 @@ export default function TerminalConsole(input: Props) {
               });
           streamId = authorization.streamId;
           if (disposed) {
-            // Unmount can race the POST response. Once the stream ID is known, revoke
-            // the exact unused ticket so it does not hold a per-node slot until expiry.
             endSession(props.nodeId, streamId);
             return;
           }

@@ -6,9 +6,6 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
 
-// ToProtocolBatch converts the Agent's internal Docker model to the shared
-// wire DTO. Call protocol.MarshalDockerBatch on the result before placing it
-// in an Envelope so both schema validation and the payload byte limit apply.
 func ToProtocolBatch(batch Batch) (protocol.DockerBatch, error) {
 	out := protocol.DockerBatch{
 		Sequence:      batch.Sequence,

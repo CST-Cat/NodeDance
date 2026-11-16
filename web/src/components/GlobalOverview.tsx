@@ -23,7 +23,6 @@ type Place = { location: number[]; continent: string };
 type Point = { node: AgentNode; id: string; code: string; label: string; place: Place };
 const countries: Record<string, Place> = locations;
 const radians = Math.PI / 180;
-// Same camera convention as the local Komari theme's latLngToAngles.
 export function frontScore(location: number[], phi: number, theta: number) {
   const target = Math.PI - (location[1] * radians - Math.PI / 2);
   const latitude = location[0] * radians;
@@ -212,8 +211,6 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
       if (score > 0.1 && !visibleRegions.has(point.id)) visibleRegions.set(point.id, { point, score });
     }
     if (visibleRegions.has(memory.code) && stamp - memory.since < 4500) return;
-    // Fairness among visible regions also tours southern nodes that share a
-    // longitude with a northern region; proximity alone would starve them.
     const candidate = [...visibleRegions.values()].sort((a, b) => (memory.visited.get(a.point.id) ?? 0) - (memory.visited.get(b.point.id) ?? 0) || b.score - a.score)[0];
     if (!candidate) return;
     const best = candidate.point;
@@ -246,7 +243,7 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
         try {
           const result = await readMetrics(node);
           if (!controller.signal.aborted && "metrics" in result) setSamples(current => current[node.nodeId] === result ? current : { ...current, [node.nodeId]: result });
-        } catch { /* A selected node retries below; keep any last known sample. */ }
+        } catch {}
       }
     }));
     return () => controller.abort();
@@ -258,7 +255,7 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
       if (!document.hidden) try {
         const result = await readMetrics(selected);
         if (!controller.signal.aborted && "metrics" in result) setSamples(current => current[selected.nodeId] === result ? current : ({ ...current, [selected.nodeId]: result }));
-      } catch { /* Preserve the cached card while the next refresh retries. */ }
+      } catch {}
       if (!controller.signal.aborted) timer = window.setTimeout(read, 5000);
     };
     void read(); return () => { controller.abort(); clearTimeout(timer); };

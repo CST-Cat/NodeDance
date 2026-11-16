@@ -19,8 +19,6 @@ import (
 	"github.com/creack/pty"
 )
 
-// Each managed terminal gets a private server. Closing it kills all windows and
-// panes, while detaching kills only the client, leaving the shell with tmux.
 type tmuxEndpoint struct {
 	mu                     sync.Mutex
 	client                 *ptyClient
@@ -32,8 +30,6 @@ type tmuxEndpoint struct {
 }
 
 func newTmuxEndpoint(ctx context.Context, directory, socketDirectory string, env []string, request protocol.TerminalFrame, args []string) (*tmuxEndpoint, error) {
-	// The complete executable is available inside the managed host shell too.
-	// tmux's own TMUX environment selects this session's dedicated socket.
 	filtered := make([]string, 0, len(env)+1)
 	for _, value := range env {
 		if !strings.HasPrefix(value, "PATH=") {
@@ -58,7 +54,6 @@ func newTmuxEndpoint(ctx context.Context, directory, socketDirectory string, env
 		_ = e.Close()
 		return nil, fmt.Errorf("could not create bundled tmux session: %s: %w", output, err)
 	}
-	// New windows/panes retain the selected target, including Docker terminals.
 	quoted := make([]string, len(args))
 	for index, value := range args {
 		quoted[index] = "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
@@ -152,8 +147,6 @@ func (e *tmuxEndpoint) Read(data []byte) (int, error) {
 	}
 }
 
-// A tmux client can exit independently of its shell (including Ctrl-b d).
-// Restore the presentation while the managed server still has a session.
 func (e *tmuxEndpoint) recoverClient(client *ptyClient) bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -178,7 +171,6 @@ func (e *tmuxEndpoint) Write(data []byte) (int, error) {
 	if client == nil {
 		return 0, errors.New("terminal is detached")
 	}
-	// Closing/detaching must be able to interrupt a blocked PTY write.
 	return client.Write(data)
 }
 func (e *tmuxEndpoint) Resize(rows, columns uint16) error {
@@ -191,8 +183,6 @@ func (e *tmuxEndpoint) Resize(rows, columns uint16) error {
 	return e.client.Resize(rows, columns)
 }
 
-// The tmux client exit status is not the shell exit status. Report closure
-// without fabricating a shell code after tmux has removed the final pane.
 func (e *tmuxEndpoint) ExitCode() *int { return nil }
 
 func (e *tmuxEndpoint) Close() error {
@@ -210,11 +200,7 @@ func (e *tmuxEndpoint) Close() error {
 	defer cancel()
 	command := exec.CommandContext(ctx, e.binary, "-S", e.socket, "kill-server")
 	command.Env = e.env
-	// An exited shell may already have removed its server.
 	_ = command.Run()
-	// A failed or timed-out kill-server leaves the socket file behind even
-	// when no server answers on it anymore. Unlink it only on the definitive
-	// has-session exit code so a live server never loses its socket.
 	probeCtx, probeCancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer probeCancel()
 	probe := exec.CommandContext(probeCtx, e.binary, "-S", e.socket, "has-session", "-t", "main")

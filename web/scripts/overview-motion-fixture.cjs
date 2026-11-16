@@ -1,5 +1,3 @@
-// Protocol-only fixtures for an isolated real Core. No Agent process, host
-// command, Docker connection, file service or external resource is used.
 const assert=require('node:assert/strict'),crypto=require('node:crypto')
 module.exports=async function({context,base,count=3,cpuPercent}) {
  const headers={Origin:base,'X-CSRF-Token':(await(await context.request.get(base+'/api/v1/auth/csrf')).json()).token}

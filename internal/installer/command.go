@@ -1,4 +1,3 @@
-// Package installer renders the root Agent installation commands shared by all UIs.
 package installer
 
 import (

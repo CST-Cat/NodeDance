@@ -24,8 +24,6 @@ const (
 	TypeHostResponse         = "host_response"
 )
 
-// AgentSettings contains no enrollment or device secrets. It is the shared
-// configuration contract for all administrator interfaces and the Agent.
 type AgentSettings struct {
 	Observability               *ObservationSettings `json:"observability,omitempty"`
 	DisableRemoteControl        bool                 `json:"disableRemoteControl"`
@@ -169,7 +167,6 @@ type Traffic struct {
 	Gaps                uint64    `json:"gaps"`
 }
 
-// Host measurements fail independently; missing devices are unknown, never zero.
 type DiskIO struct {
 	ReadBytesPerSecond  float64 `json:"readBytesPerSecond"`
 	WriteBytesPerSecond float64 `json:"writeBytesPerSecond"`
@@ -322,7 +319,6 @@ type HostResponse struct {
 	Diagnostics map[string]any      `json:"diagnostics,omitempty"`
 }
 
-// HostMetricKeys is shared by history, alert validation and presentation.
 var HostMetricKeys = map[string]string{
 	"disk.read_bytes_per_second": "Disk read (bytes/s)", "disk.write_bytes_per_second": "Disk write (bytes/s)",
 	"swap.used_percent": "Swap usage (%)", "swap.used_bytes": "Swap used (bytes)",
@@ -450,8 +446,6 @@ func ValidNodeLineType(value string) bool {
 	return value == "" || value == LineTypeKVM || value == LineTypeNAT || value == LineTypeHomelab
 }
 
-// Currencies lists the supported billing currencies published in the operation
-// contract; the list is presentation-agnostic and shared by Web, CLI and TUI.
 var Currencies = []string{"USD", "EUR", "CNY", "JPY", "GBP", "HKD", "KRW", "SGD", "AUD", "CAD"}
 
 func DefaultNodeAsset() NodeAsset {

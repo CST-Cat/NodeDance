@@ -201,9 +201,6 @@ func (s *Server) acceptAgentTaskReport(ctx context.Context, connection *agentCon
 		}
 	}
 	if after.Status == taskstate.Unknown {
-		// A reconciliation response has finished for this generation. Keep the
-		// attempted marker to prevent an unbounded same-generation retry loop,
-		// but stop counting the completed request against active task capacity.
 		delete(connection.taskReconcileOutstanding, report.TaskID)
 	}
 	if taskstate.IsTerminal(after.Status) {
@@ -223,8 +220,6 @@ func (s *Server) acceptAgentTaskReport(ctx context.Context, connection *agentCon
 	return nil
 }
 
-// migrateRebuiltContainerPreferences moves only a verified successful rebuild's
-// display preferences in the same SQLite store as the dashboard.
 func (s *Server) migrateRebuiltContainerPreferences(ctx context.Context, task coretasks.Task) error {
 	if task.Status != taskstate.Succeeded || task.Intent.Action != protocol.TaskRebuild ||
 		!protocol.IsFullContainerID(task.Intent.ContainerID) || !protocol.IsFullContainerID(task.Result.ResourceRevision) ||
@@ -276,8 +271,6 @@ func (s *Server) dispatchAgentTasks(ctx context.Context, connection *agentConnec
 			}
 			clearContainerCreateSpec(dispatch.ContainerCreate)
 			dispatch.ContainerCreate = nil
-			// The safe typed intent was already persisted, but no malformed frame
-			// is allowed to reach an Agent. Marking it unknown is safer than replay.
 			return errors.New("durable task cannot be represented by the task wire contract")
 		}
 		connection.taskSlots--
@@ -298,7 +291,7 @@ func (s *Server) dispatchAgentTasks(ctx context.Context, connection *agentConnec
 		clear(payload)
 		message.Payload = nil
 		if writeErr != nil {
-			return writeErr // Core delivery is already committed; reconnect reconciliation will mark uncertainty.
+			return writeErr
 		}
 		if task.Intent.Action == protocol.TaskFileSaveText && task.Intent.File != nil {
 			content := s.takeFileContent(task.TaskID, task.NodeID, task.Intent.File.SHA256)
@@ -339,7 +332,7 @@ func (s *Server) dispatchAgentTasks(ctx context.Context, connection *agentConnec
 			connection.taskReconcileOutstanding[task.TaskID] = struct{}{}
 			connection.taskReconcileAttempted[task.TaskID] = struct{}{}
 			if err := s.writeAgentEnvelope(ctx, connection.conn, message); err != nil {
-				return err // Read-only reconciliation is safe to repeat on the next authenticated generation.
+				return err
 			}
 		}
 	}

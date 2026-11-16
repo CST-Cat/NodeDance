@@ -12,9 +12,6 @@ const FineInterval = 5 * time.Second
 const FineRetention = 24 * time.Hour
 const FineMaxRange = 4 * time.Hour
 
-// Only the four rate series need high-resolution retention. Source timestamps
-// deduplicate cached reports; receiver time minus sample age avoids Agent clock
-// skew moving samples into the future or filling missing intervals.
 func appendFine(ctx context.Context, tx *sql.Tx, node string, snapshot protocol.MetricsSnapshot, received time.Time) error {
 	interval := 5
 	if snapshot.Host != nil && snapshot.Host.FastIntervalSeconds > 0 {

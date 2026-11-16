@@ -33,8 +33,6 @@ const (
 	LogStderr LogChannel = "stderr"
 )
 
-// LogsOptions describes a bounded Engine query. Empty Tail means all retained
-// history. If both output flags are false, both streams are selected.
 type LogsOptions struct {
 	Tail       string
 	Since      time.Time
@@ -45,15 +43,11 @@ type LogsOptions struct {
 	ShowStderr bool
 }
 
-// LogFrame contains at most LogChunkBytes of decoded output. Data never
-// contains Docker's eight-byte non-TTY multiplex header.
 type LogFrame struct {
 	Channel LogChannel `json:"channel"`
 	Data    []byte     `json:"data"`
 }
 
-// LogReader streams decoded frames through a bounded channel. Close cancels
-// the Engine request, closes the body, and waits for its reader goroutine.
 type LogReader struct {
 	Frames <-chan LogFrame
 	Errors <-chan error

@@ -241,10 +241,6 @@
   opacity: 0.45;
   cursor: not-allowed;
 }
-/* Transient SSH discovery feedback: a small floating overlay pinned just above the
-   clicked Copy SSH button. It is absolutely positioned, pointer-events none,
-   occupies no layout space and never shifts the card or its actions, and
-   auto-hides. */
 .vps-card-ssh-pop[data-v-31185faa] {
   position: absolute;
   z-index: 5;

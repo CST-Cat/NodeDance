@@ -1,5 +1,4 @@
 const {selectValue}=require('./arc-controls.cjs')
-// Isolated real Core, simulated protocol-only Agent, and anonymous browser.
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=require('node:net'),crypto=require('node:crypto')
 const {spawn,execFileSync}=require('node:child_process'),{chromium}=require('playwright')
 const root=path.resolve(__dirname,'../..'),binary=path.join(root,'.build/nodedance'),artifacts=path.join(root,'.build/guest-audit')
@@ -15,7 +14,6 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   const csrf=await(await admin.request.get(base+'/api/v1/auth/csrf')).json(),credentials=JSON.parse(fs.readFileSync(path.join(directory,'initial-admin.json'),'utf8'))
   const login=await admin.request.post(base+'/api/v1/auth/login',{headers:{Origin:base,'X-CSRF-Token':csrf.token},data:credentials});assert.equal(login.status(),200)
   const headers={Origin:base,'X-CSRF-Token':(await login.json()).csrfToken}
-  // Persistent terminal policy still requires valid credentials and remains revocable.
   const terminal=await browser.newContext({locale:'en-US'})
   const terminalCSRF=(await(await terminal.request.get(base+'/api/v1/auth/csrf')).json()).token
   const terminalLogin=await terminal.request.post(base+'/api/v1/auth/login',{headers:{Origin:base,'X-CSRF-Token':terminalCSRF},data:{...credentials,persistent:true}})
@@ -28,8 +26,6 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   const revokedTerminal=await browser.newContext({locale:'en-US'});await revokedTerminal.addCookies(terminalCookies)
   assert.equal((await revokedTerminal.request.get(base+'/api/v1/auth/me')).status(),401)
   await revokedTerminal.close();await terminal.close()
-  // A stale login tab can coexist with a valid cookie from another tab.
-  // Only a pre-authentication CSRF rejection is retried, once, without losing input.
   for(const rejectedAttempts of [1,2]){
    const recovery=await browser.newContext({locale:'en-US',viewport:{width:390,height:1000}})
    const recoveryPage=await recovery.newPage();recoveryPage.setDefaultTimeout(10000)
@@ -57,7 +53,6 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   const page=await visitor.newPage();page.setDefaultTimeout(10000);const errors=[];page.on('pageerror',e=>{errors.push(e.message);console.error('Guest page error:',e.stack)})
   let guestReads=0;const privateReads=[];page.on('request',r=>{if(new URL(r.url()).pathname==='/api/v1/public/guest/display')guestReads++;const p=new URL(r.url()).pathname;if(p.startsWith('/api/v1/nodes')||p.startsWith('/api/v1/guest/settings')||p.startsWith('/api/v1/guest/preview'))privateReads.push(p)})
   await page.goto(base);await page.locator('#login-title').waitFor();assert.equal(await page.getByRole('button',{name:'Guest mode',exact:true}).count(),0)
-  // Password reveal is temporary, keyboard-accessible and never submits login.
   const passwordInput=page.locator('#login-password');let revealLoginRequests=0
   const countRevealLogin=request=>{if(new URL(request.url()).pathname==='/api/v1/auth/login')revealLoginRequests++}
   page.on('request',countRevealLogin)
@@ -205,9 +200,6 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   await adminPage.goBack();await overviewTab.waitFor();await adminPage.waitForFunction(()=>!location.hash.includes('section='));await overviewTab.and(adminPage.locator('[aria-current=page]')).waitFor()
   assert.equal(await overviewTab.getAttribute('aria-current'),'page','Browser Back restores overview after history')
   assert.ok(!new URL(adminPage.url()).hash.includes('section='))
-  // A valid administrator cookie still gets only public requests on guest URL
-  // restore; returning to management requires a fresh valid session.
-  // Real operation dropdown portals must still disappear immediately on guest entry.
   const privateMenuPage=await admin.newPage();privateMenuPage.setDefaultTimeout(10000)
   await privateMenuPage.goto(base+'/#/operations')
   await selectValue(privateMenuPage.locator('.operation-layout aside button[data-dropdown-field]'),'nodes.save-asset')
@@ -217,7 +209,6 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   await privateMenuPage.getByRole('heading',{name:'Public node',exact:true}).waitFor()
   assert.equal(await privateMenuPage.getByRole('menu').count(),0,'Guest entry immediately removes private operation dropdown portals')
   await privateMenuPage.close()
-  // Global fleet visualization is private, including its WebGL renderer and polling.
   const globalPage=await admin.newPage();globalPage.setDefaultTimeout(10000)
   await globalPage.goto(base+'/#/global-overview');await globalPage.locator('.global-overview').waitFor();await globalPage.locator('.global-orbit').waitFor()
   await globalPage.evaluate(()=>{location.hash='/guest'})
@@ -240,8 +231,6 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   await adminPage.reload();await adminPage.getByRole('heading',{name:'Public node',exact:true}).waitFor()
   adminPage.off('request',trackGuest);assert.deepEqual(guestPrivateRequests,[],'Administrator cookies must not expand guest history restoration')
   await adminPage.goBack();await adminPage.locator('#detail-title').waitFor();assert.equal(adminPage.url(),managementURL)
-  // Hold a real authenticated permission read, switch to guest, and release the
-  // old response. It must not overwrite the newer public navigation.
   await adminPage.evaluate(()=>{location.hash='/guest'});await adminPage.getByRole('heading',{name:'Public node',exact:true}).waitFor()
   let releaseGuard,guardStarted
   const held=new Promise(r=>releaseGuard=r),started=new Promise(r=>guardStarted=r)
@@ -264,8 +253,6 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   await admin.clearCookies();await adminPage.goBack();await adminPage.locator('#login-title').waitFor()
   assert.equal(await adminPage.locator('#workspace-navigation').count(),0,'Back to management must reject a missing administrator session')
   await admin.addCookies(savedAdminCookies);await adminPage.goto(managementURL);await adminPage.locator('#detail-title').waitFor()
-  // A node-list response that completes after its page unmounts must not
-  // trigger follow-up private metric/container/preference reads in guest mode.
   await adminPage.getByTestId('node-detail-navigation').getByRole('button',{name:'Back to home',exact:true}).click();await adminPage.locator('.nodes-dashboard').waitFor()
   await adminPage.getByRole('button',{name:'Settings',exact:true}).click();await adminPage.locator('.guest-settings').waitFor()
   let releaseNodes,nodesStarted
@@ -276,9 +263,6 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   guestPrivateRequests.length=0;adminPage.on('request',trackGuest)
   releaseNodes();await adminPage.waitForTimeout(200);await adminPage.unroute('**/api/v1/nodes');adminPage.off('request',trackGuest)
   assert.deepEqual(guestPrivateRequests,[],'An unmounted node page must not start new private reads after entering guest mode')
-  // File-manager reads also honor guest entry after component disposal. This
-  // protocol-only Agent intentionally has no file capability; hold its real
-  // unavailable response, then release it after the public page is visible.
   let releaseFiles,filesStarted
   const heldFiles=new Promise(r=>releaseFiles=r),startedFiles=new Promise(r=>filesStarted=r)
   const fileStatOperation=(await(await admin.request.get(base+'/api/v1/operations')).json()).operations.find(operation=>operation.name==='files.stat');assert.ok(fileStatOperation);
@@ -289,8 +273,6 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   guestPrivateRequests.length=0;adminPage.on('request',trackGuest)
   releaseFiles();await adminPage.waitForTimeout(300);await adminPage.unroute(filesRoute);adminPage.off('request',trackGuest)
   assert.deepEqual(guestPrivateRequests,[],'Disposed file manager must not start private reads after guest entry')
-  // Grant creation and revocation must not start private follow-up reads
-  // after their host-management component has unmounted into guest mode.
   for(const method of ['POST','DELETE']){
     await adminPage.goto(base+'/#/host-management?tab=enrollment')
     await adminPage.locator('.host-page form .primary-button').waitFor()
@@ -319,11 +301,11 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
 
   const form=adminPage.locator('.guest-settings');await form.getByRole('checkbox').first().waitFor();assert.equal(await form.getByRole('checkbox').filter({visible:true}).count()>0,true)
   await form.getByRole('button',{name:'Preview saved guest view',exact:true}).click();await form.locator('[data-testid=guest-display]').getByRole('heading',{name:'Public node',exact:true}).waitFor()
-  // Exercise settings UI with the same server-owned policy, without changing selections.
   const response=adminPage.waitForResponse(r=>r.url().endsWith('/guest/settings')&&r.request().method()==='PUT');await form.getByRole('button',{name:'Save display settings',exact:true}).click();assert.equal((await response).status(),200)
   current=(await(await admin.request.get(base+'/api/v1/guest/settings')).json()).settings
   for(const [name,p] of [['guest',page],['settings',adminPage]])for(const theme of ['light','dark'])for(const width of [390,1440]){await p.setViewportSize({width,height:1000});await p.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme);await p.evaluate(()=>window.scrollTo(0,0));await p.waitForTimeout(350);assert.ok(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${name} overflow`);}
   if(process.env.NODEDANCE_GUEST_ATTACKS==='1'){
+   await require('./guest-restart-regressions.cjs')()
    console.log('GUEST SECURITY: starting browser attack matrix')
    const attacks=await require('./guest-attacks.cjs')({base,page,visitor,admin,headers,current,identity,probe,stopReporting:async()=>{clearInterval(keepalive);while(sending)await new Promise(r=>setTimeout(r,10))},artifacts})
    current=attacks.policy

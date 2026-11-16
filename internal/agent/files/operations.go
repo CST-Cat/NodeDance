@@ -12,8 +12,6 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
 
-// Every generated destination uses the same protected-path/openat2 policy as
-// ordinary file operations. Work is staged; existing destinations are not replaced.
 func (s *Service) ExecuteExtended(ctx context.Context, action protocol.TaskAction, spec protocol.FileTaskSpec, taskID string) (retErr error) {
 	target := spec.NewPath
 	if action == protocol.TaskFileArchive {

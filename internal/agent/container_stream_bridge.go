@@ -36,9 +36,6 @@ func (s *agentContainerStream) nextSequence() uint64 {
 	return s.sequence
 }
 
-// containerStreamBridge owns all read-only Engine streams for one Agent
-// connection. It uses the shared containerstreams readers, and every stream
-// is cancelled and joined when Core disconnects or closes its request.
 type containerStreamBridge struct {
 	engine  containerstreams.Engine
 	stats   *containerstreams.StatsManager
@@ -170,8 +167,6 @@ func (b *containerStreamBridge) runLogs(ctx context.Context, writer streamEnvelo
 		case frame, ok := <-frames:
 			if !ok {
 				if ctx.Err() == nil {
-					// The reader closes Errors before Frames. Drain a pending
-					// failure before declaring the stream successfully complete.
 					if errorsIn != nil {
 						if err := <-errorsIn; err != nil {
 							b.writeStreamError(ctx, writer, generation, stream, "engine_error")

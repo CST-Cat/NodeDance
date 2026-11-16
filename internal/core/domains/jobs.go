@@ -300,8 +300,6 @@ func (s *Store) work(parent context.Context) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.active, j.ID)
-	// Cancellation and shutdown must never overwrite a newer job decision. A
-	// previous certificate remains intact until an entire renewal commits.
 	finalCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
 	defer stop()
 	current, readErr := s.Job(finalCtx, j.ID)
@@ -422,8 +420,6 @@ func (s *Store) maintain(ctx context.Context, notify func(context.Context, strin
 			Next time.Time       `json:"next"`
 		}{Sent: map[string]bool{}}
 		if previous != "" && json.Unmarshal([]byte(previous), &state) != nil {
-			// A corrupt bucket must not silently disable expiry notifications
-			// forever; the next successful send overwrites it.
 			log.Printf("NodeDance certificate %s has an unreadable notification bucket; skipping its notifications this cycle", c.ID)
 			continue
 		}

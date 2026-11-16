@@ -13,7 +13,6 @@ const (
 	TerminalActionOutput = "output"
 	TerminalActionResize = "resize"
 	TerminalActionClose  = "close"
-	// Attach and detach are Core-to-Agent lifecycle actions, never client input.
 	TerminalActionAttach = "attach"
 	TerminalActionDetach = "detach"
 	TerminalActionClosed = "closed"
@@ -23,20 +22,14 @@ const (
 	TerminalTargetHost      = "host"
 	TerminalTargetContainer = "container"
 
-	// Terminal frame data is small enough for the bounded Agent writer queues,
-	// yet large enough to make interactive Unicode paste practical.
 	MaxTerminalDataBytes = 24 << 10
 	MaxTerminalFrameJSON = 40 << 10
 	MaxTerminalRows      = 500
 	MaxTerminalColumns   = 500
 )
 
-// ErrTerminalBackpressure marks a saturated bounded terminal lane: the writer
-// is healthy and keeps draining, so lifecycle frames may wait for space.
 var ErrTerminalBackpressure = errors.New("terminal output queue is full")
 
-// TerminalFrame is a deliberately small interactive terminal contract. Open
-// selects only a fixed host shell or Docker Exec; no shell command is accepted.
 type TerminalFrame struct {
 	StreamID     string               `json:"streamId"`
 	Action       string               `json:"action"`

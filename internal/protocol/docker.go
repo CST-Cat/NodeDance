@@ -14,11 +14,9 @@ import (
 )
 
 const (
-	// TypeDocker is sent only by Agents that negotiated CapabilityDocker.
 	TypeDocker       = "docker"
 	CapabilityDocker = "agent.docker.v1"
 
-	// MaxDockerPayloadBytes matches the Core Agent payload decoder bound.
 	MaxDockerPayloadBytes = 64 << 10
 	MaxDockerBatchChanges = 64
 
@@ -59,11 +57,6 @@ const (
 	DockerChangeStale  DockerChangeAction = "stale"
 )
 
-// DockerBatch is the shared, size-bounded payload for Agent Docker inventory
-// updates. Envelope identity, generation, and transport sequence are supplied
-// by the authenticated Core-Agent connection and never repeated as identity
-// claims in this payload. Sequence is the Agent discovery cache watermark;
-// all chunks of one full snapshot intentionally share it.
 type DockerBatch struct {
 	Sequence      uint64         `json:"sequence"`
 	SnapshotID    uint64         `json:"snapshotId,omitempty"`
@@ -74,8 +67,6 @@ type DockerBatch struct {
 	Health        *DockerHealth  `json:"health,omitempty"`
 }
 
-// DockerChange is one normalized resource update. It contains neither raw
-// Engine Inspect JSON, environment variables, nor arbitrary Docker labels.
 type DockerChange struct {
 	Sequence    uint64             `json:"sequence"`
 	Action      DockerChangeAction `json:"action"`
@@ -169,8 +160,6 @@ type DockerHealth struct {
 	ObservedAt      time.Time          `json:"observedAt"`
 }
 
-// MarshalDockerBatch validates the shared payload and enforces the same
-// 64 KiB limit used by the Core's Agent payload decoder.
 func MarshalDockerBatch(batch DockerBatch) ([]byte, error) {
 	if err := validateDockerBatch(batch); err != nil {
 		return nil, err
@@ -185,8 +174,6 @@ func MarshalDockerBatch(batch DockerBatch) ([]byte, error) {
 	return data, nil
 }
 
-// UnmarshalDockerBatch strictly decodes one bounded payload. Unknown fields
-// and trailing JSON are rejected so the Core and Agent use the same schema.
 func UnmarshalDockerBatch(data []byte) (DockerBatch, error) {
 	var batch DockerBatch
 	if len(data) == 0 || len(data) > MaxDockerPayloadBytes {

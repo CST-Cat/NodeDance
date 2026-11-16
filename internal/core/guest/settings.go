@@ -1,4 +1,3 @@
-// Package guest owns the explicitly published, read-only display policy.
 package guest
 
 import (
@@ -35,13 +34,8 @@ type Metric struct {
 	History    bool   `json:"history"`
 }
 
-// Only these aggregate metrics may be published; host metadata and mount names
-// never enter the guest contract. This registry is also discovered by clients.
 func Metrics() []Metric {
 	return []Metric{{"cpu.usage_percent", "%", "cpu.usage_percent", true}, {"memory.used_percent", "%", "memory.used_percent", true}, {"disk.used_percent", "%", "disk:/:used_percent", true}, {"network.received_bytes_per_second", "B/s", "network.received_bytes_per_second", true}, {"network.sent_bytes_per_second", "B/s", "network.sent_bytes_per_second", true}, {"uptime.seconds", "s", "", false}}
-}
-func Defaults() Settings {
-	return Settings{Title: "NodeDance", Metrics: []string{}, Nodes: []Resource{}, Probes: []Resource{}}
 }
 func Validate(s Settings) error {
 	if s.Revision < 0 || strings.TrimSpace(s.Title) == "" || utf8.RuneCountInString(s.Title) > 80 || strings.ContainsAny(s.Title, "\x00\r\n") || len(s.Nodes) > 20 || len(s.Probes) > 20 {

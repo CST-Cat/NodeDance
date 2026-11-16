@@ -1,5 +1,4 @@
 const {closeNavigation}=require('./sidebar-navigation.cjs')
-// Project-wide UI tasks are intercepted; never call Docker or a real Agent.
 const assert=require('node:assert/strict'),path=require('node:path')
 module.exports=async function({page,base,node,catalog,artifacts}){
  const operation=name=>{const value=catalog.operations.find(item=>item.name===name);assert.ok(value);return value}
@@ -40,7 +39,6 @@ module.exports=async function({page,base,node,catalog,artifacts}){
   await page.waitForFunction(()=>!document.querySelector('.compose-project-select [role=checkbox]:disabled'))
   assert.equal(submissions.length,before+2);assert.ok(submissions.slice(before).every(value=>value.body.action===action))
  }
- // Confirmations cannot bypass a stale inventory or a removed selected target.
  let before=submissions.length;await button('delete').click();stale=true;await confirm();await page.locator('.compose-error').waitFor();assert.equal(submissions.length,before)
  stale=false;await refresh();await page.waitForFunction(()=>!document.querySelector('.compose-stale'));await button('delete').click();projects=all.slice(1);await confirm();await page.waitForFunction(expected=>document.querySelectorAll('.compose-project-card').length===expected,all.length-1);assert.equal(submissions.length,before)
  projects=[...all];await refresh();await page.waitForFunction(expected=>document.querySelectorAll('.compose-project-card').length===expected,all.length)

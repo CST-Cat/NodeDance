@@ -1,4 +1,3 @@
-// Persisted five-second response fixture, independent of dashboard samples.
 const assert=require('node:assert/strict')
 module.exports=function(url){
  const query=new URL(url).searchParams,from=Date.parse(query.get('from')),to=Date.parse(query.get('to')),step=5000;

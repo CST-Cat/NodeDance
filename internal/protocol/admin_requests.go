@@ -1,8 +1,5 @@
 package protocol
 
-// Administrator request DTOs are shared by Core decoders and the published
-// operation contract. Request presence is explicit, independent of JSON output.
-
 type ContainerActionRequest struct {
 	Action               TaskAction   `json:"action" request:"required"`
 	NewName              string       `json:"newName,omitempty"`

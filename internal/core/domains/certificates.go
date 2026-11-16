@@ -336,7 +336,6 @@ func (s *Store) CheckDNS(ctx context.Context, id string) (DNSResult, error) {
 	return out, nil
 }
 
-// Resolver variables remain package-private; tests run against protocol-only fixtures.
 var defaultResolver = net.DefaultResolver
 var netLookupHost = func(ctx context.Context, name string) ([]string, error) { return defaultResolver.LookupHost(ctx, name) }
 var netLookupCNAME = func(ctx context.Context, name string) (string, error) { return defaultResolver.LookupCNAME(ctx, name) }
@@ -406,8 +405,6 @@ func safeJobError(e error) string {
 	return fmt.Sprintf("certificate operation failed: %s", redactError(e.Error()))
 }
 
-// External services may echo credentials or unbounded response text. Public jobs
-// expose stable failure classes; detailed secrets are never put in audit logs.
 func redactError(message string) string {
 	switch {
 	case strings.Contains(message, "DNS propagation"):
@@ -423,8 +420,6 @@ func redactError(message string) string {
 	}
 }
 
-// Export binds explicit revision confirmation, material read and audit to one
-// transaction. Concurrent renewals cannot swap the confirmed material.
 func (s *Store) Export(ctx context.Context, id string, in ConfirmInput, event audit.Event) ([]byte, []byte, error) {
 	if !in.Confirm {
 		return nil, nil, ErrInvalid

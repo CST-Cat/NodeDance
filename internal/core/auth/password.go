@@ -9,8 +9,6 @@ import (
 	"golang.org/x/crypto/argon2"
 )
 
-// PasswordParameters is intentionally fixed for production so persisted hashes
-// have a reviewable cost. Core bounds concurrent password derivations.
 type PasswordParameters struct {
 	MemoryKiB   uint32
 	Iterations  uint32

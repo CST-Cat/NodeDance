@@ -8,7 +8,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -116,17 +115,6 @@ func (c *agentConnection) capabilityNegotiated(capability string) bool {
 	return negotiated
 }
 
-func (c *agentConnection) activeCapabilityList() []string {
-	c.capabilityMu.RLock()
-	capabilities := make([]string, 0, len(c.activeCapabilities))
-	for capability := range c.activeCapabilities {
-		capabilities = append(capabilities, capability)
-	}
-	c.capabilityMu.RUnlock()
-	sort.Strings(capabilities)
-	return capabilities
-}
-
 func (c *agentConnection) failComposeWaiters(errorCode string) {
 	if c == nil {
 		return
@@ -161,8 +149,6 @@ func (c *agentConnection) failImageWaiters(errorCode string) {
 	}
 }
 
-// applyCapabilityReport accepts only a monotonic downgrade within the set
-// negotiated in Hello. Nil leaves the current capability set unchanged.
 func (c *agentConnection) applyCapabilityReport(capabilities []string) error {
 	if capabilities == nil {
 		return nil
@@ -231,8 +217,6 @@ func (c *agentConnection) enqueue(command protocol.Envelope) {
 	select {
 	case c.commands <- command:
 	default:
-		// The rotation request is durable in SQLite and will be included in the
-		// next welcome if a bounded live-command queue is full.
 	}
 }
 
@@ -291,9 +275,6 @@ func (s *Server) expireAgentLeases(ctx context.Context) {
 	}
 }
 
-// watchAgentLease remains alive for the full lease even after the WebSocket
-// drops. It uses persisted heartbeat timestamps and a generation CAS so an
-// old connection can never expire a newer lease.
 func (s *Server) watchAgentLease(connection *agentConnection, identity agents.Identity, initial time.Time) {
 	watchCtx, cancel, ok := s.startAgentLeaseWatcher(connection, identity.AgentID)
 	if !ok {
@@ -324,9 +305,6 @@ func (s *Server) watchAgentLease(connection *agentConnection, identity agents.Id
 			}
 			if expired {
 				s.metrics.Notify(identity.NodeID)
-				// The per-connection deadline can win the race with the periodic
-				// offline sweep. In that case the sweep no longer sees an online
-				// lease, so this path must also invalidate the last probe status.
 				_ = s.probes.MarkNodeUnknown(watchCtx, identity.NodeID, s.now())
 				s.closeAgentConnection(identity.AgentID, connection.generation)
 				return
@@ -368,9 +346,6 @@ func (s *Server) startAgentLeaseWatcher(connection *agentConnection, agentID str
 		previous.stopLeaseWatch()
 	}
 	s.agentConnectionsMu.Unlock()
-	// Do not let disconnected generations accumulate timer goroutines. The
-	// ordinary disconnect keeps its watcher until this newer authenticated
-	// generation takes ownership.
 	if previous != nil && previous.watchDone != nil {
 		<-previous.watchDone
 	}
@@ -774,8 +749,6 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					return
 				}
 				if !connection.capabilityEnabled(protocol.CapabilityMetrics) {
-					// The control writer can overtake a metrics sample already queued
-					// for the socket. It is valid, but no longer authoritative.
 					continue
 				}
 				lastSeen, active, err := s.agents.ActiveLeaseLastSeen(ctx, identity.NodeID, connection.generation)
@@ -792,14 +765,9 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 						s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid Agent metrics report")
 						return
 					}
-					// A duplicate or delayed telemetry frame is discarded without
-					// changing heartbeat sequence or validity.
 					continue
 				}
 				if err := s.history.AppendSnapshot(ctx, identity.NodeID, report, receivedAt); err != nil {
-					// Do not silently create a hole in durable history after Core has
-					// accepted the live sample. A reconnect can resume when SQLite is
-					// available; the missing interval remains an explicit chart gap.
 					return
 				}
 				s.metrics.Notify(identity.NodeID)
@@ -814,16 +782,12 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					return
 				}
 				if !connection.capabilityEnabled(protocol.CapabilityDocker) {
-					// The Docker FIFO may contain frames after a control-lane
-					// downgrade. Its inventory is stale, so discard delayed batches.
 					continue
 				}
 				frame := dockerFrame{sequence: envelope.Sequence, batch: batch}
 				select {
 				case connection.dockerFrames <- frame:
 				default:
-					// A lost ordered chunk invalidates the current snapshot. Force a
-					// reconnect so the Agent starts a fresh full inventory scan.
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Docker inventory queue overflow")
 					return
 				}
@@ -993,8 +957,6 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					continue
 				}
 				if err := s.probes.Complete(ctx, report, connection.generation, receivedAt); errors.Is(err, coreprobes.ErrNotFound) || errors.Is(err, coreprobes.ErrConflict) || errors.Is(err, coreprobes.ErrRunState) {
-					// A late or duplicated result is not a connection-fatal error; its
-					// persisted run remains authoritative and bounded by generation.
 					continue
 				} else if err != nil {
 					s.closeAgentProtocol(connection.conn, websocket.StatusInternalError, "could not persist Agent service probe result")

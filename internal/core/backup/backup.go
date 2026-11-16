@@ -1,4 +1,3 @@
-// Package backup creates and restores private, integrity-checked Core backups.
 package backup
 
 import (
@@ -57,8 +56,6 @@ type sourceFile struct {
 	localPath   string
 }
 
-// Create writes a fresh mode-0600 backup file. SQLite's online backup API
-// includes committed WAL content in a consistent database snapshot.
 func Create(ctx context.Context, dataDir, outputPath string) (retErr error) {
 	root, err := secureDataDirectory(dataDir)
 	if err != nil {
@@ -144,8 +141,6 @@ func Create(ctx context.Context, dataDir, outputPath string) (retErr error) {
 	return writeArchive(ctx, output, outputParent, manifestBytes, files, archiveManifest.Files)
 }
 
-// Restore validates the whole archive into a private sibling directory before
-// atomically installing it at dataDir. Existing nonempty targets are refused.
 func Restore(ctx context.Context, inputPath, dataDir string) (retErr error) {
 	if strings.TrimSpace(inputPath) == "" || strings.TrimSpace(dataDir) == "" {
 		return errors.New("backup input and restore data directory are required")
@@ -594,9 +589,6 @@ func maxFileSizeFor(name string) int64 {
 	}
 }
 
-// Check cancellation between bounded copy reads without a detached worker.
-// Input files are regular files; this does not promise to interrupt a kernel
-// read already blocked on a failing filesystem.
 type contextReader struct {
 	ctx    context.Context
 	source io.Reader

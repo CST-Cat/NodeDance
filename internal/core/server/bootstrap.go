@@ -12,8 +12,6 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/core/auth"
 )
 
-// InitialAdminPath contains first-run credentials until the first successful login.
-// Only its path is printed during unattended starts.
 func (s *Server) InitialAdminPath() string { return filepath.Join(s.dataDir, "initial-admin.json") }
 
 func (s *Server) BootstrapAdministrator(ctx context.Context, username, password string) error {

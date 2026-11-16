@@ -1,4 +1,3 @@
-// Bundled SVG paths from Simple Icons (CC0); see public/licenses/service-logos-notices.txt.
 export const serviceLogos: Record<string, { name: string; path: string }> = {
   docker: {
     name: "Docker",

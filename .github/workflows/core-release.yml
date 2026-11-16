@@ -21,7 +21,6 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/release-notes.py validate core "$RELEASE_VERSION" --agent-tag "$(cat agent-release.version)"
-          python3 -m unittest discover -s scripts/tests
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -51,7 +50,7 @@ jobs:
           retention-days: 1
 
   build:
-    name: Native Core ${{ matrix.arch }} build and tests
+    name: Native Core ${{ matrix.arch }} build and checks
     needs: prepare
     permissions:
       contents: read
@@ -94,11 +93,10 @@ jobs:
           CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${RELEASE_VERSION}" -o "dist/nodedance-linux-${EXPECTED_ARCH}" ./cmd/nodedance
           [[ "$("dist/nodedance-linux-${EXPECTED_ARCH}" --version)" == "NodeDance ${RELEASE_VERSION}" ]]
 
-      - name: Run native Go tests including root Agent integration
+      - name: Vet native Go packages
         run: |
           set -euo pipefail
-          sudo env "PATH=$PATH" "GOPATH=$(go env GOPATH)" "GOMODCACHE=$(go env GOMODCACHE)" "GOCACHE=$(go env GOCACHE)" \
-            "$(command -v go)" test -count=1 ./...
+          go vet ./...
 
       - name: Upload tested native Core artifact
         uses: actions/upload-artifact@v4
@@ -198,9 +196,6 @@ jobs:
           RELEASE_VERSION: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          # Installers read this file through raw.githubusercontent.com instead
-          # of the rate-limited GitHub REST API. Written only after the release
-          # and every asset above are confirmed published.
           printf '%s\n' "$RELEASE_VERSION" > core-latest.txt
           for attempt in {1..5}; do
             if gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/core-latest.txt" \

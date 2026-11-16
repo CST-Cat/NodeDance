@@ -41,9 +41,6 @@ var probeErrorCodes = map[string]struct{}{
 	"tls_verification": {}, "http_status_mismatch": {}, "dns": {}, "connection_failed": {},
 }
 
-// ProbeDispatch is Core-owned configuration copied into one scheduled run.
-// Agent validates all bounds again because Core and Agent are separate trust
-// boundaries even though the message is authenticated.
 type ProbeDispatch struct {
 	IPFamily           string `json:"ipFamily,omitempty"`
 	ProbeID            string `json:"probeId"`
@@ -89,9 +86,6 @@ func ValidateProbeDispatch(envelope Envelope, dispatch ProbeDispatch, nodeID str
 	return nil
 }
 
-// ValidateProbeReport checks the Agent result envelope and the bounded result
-// vocabulary. The Core additionally binds the run to the stored node and
-// generation before accepting it.
 func ValidateProbeReport(envelope Envelope, report ProbeReport, nodeID string, generation uint64) error {
 	if envelope.Version != CurrentVersion || envelope.Type != TypeProbeReport || envelope.Generation != generation || generation == 0 ||
 		!probeUUIDPattern.MatchString(envelope.RequestID) || report.RunID != envelope.RequestID ||

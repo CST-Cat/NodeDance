@@ -5,7 +5,6 @@
 
 @media (max-width: 900px) {
   .overview-toolbar-slot { margin-bottom: 12px; }
-  /* Compact counts and natural icon buttons at every narrow-screen scroll position. */
   .app-shell[data-theme] .overview-toolbar-slot .node-count-label { display: none; }
   .app-shell[data-theme] .overview-toolbar-slot .node-count-compact-label { display: inline; }
   body:has(.navigation-toggle[aria-expanded="true"]) .overview-toolbar-panel {
@@ -80,6 +79,5 @@
 @media (min-width: 360px) and (max-width: 900px) {
   .app-shell[data-theme] .overview-toolbar-slot > .overview-toolbar-panel { padding-inline: 6px; }
   .app-shell[data-theme] .overview-toolbar-slot .node-summary article { gap: 3px; }
-  /* Preserve the outer anchors while opening space between counts and actions. */
   .app-shell[data-theme] .overview-toolbar-slot .node-summary { padding-inline-end: 8px; column-gap: 0; }
 }

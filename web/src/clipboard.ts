@@ -2,15 +2,13 @@ import { beforeDispose, cell } from "./state";
 
 export type CopyState = "idle" | "pending" | "success" | "error";
 
-// One clipboard path for SSH, enrollment commands and host information.
-// The fallback preserves focus and selection, including inside a native dialog.
 export async function copyToClipboard(text: string): Promise<void> {
   try {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(text);
       return;
     }
-  } catch { /* Try the browser's user-gesture clipboard path. */ }
+  } catch {}
   const active = document.activeElement as HTMLElement | null;
   const selection = window.getSelection();
   const ranges = selection ? Array.from({ length: selection.rangeCount }, (_, i) => selection.getRangeAt(i).cloneRange()) : [];
@@ -47,7 +45,7 @@ export function clipboardFeedback() {
       const current = revision;
       state.value = "pending";
       let copied = false;
-      try { await copyToClipboard(text); copied = true; } catch { /* Expose failure through the same control. */ }
+      try { await copyToClipboard(text); copied = true; } catch {}
       if (current === revision) {
         state.value = copied ? "success" : "error";
         timer = setTimeout(() => { state.value = "idle"; }, 2500);

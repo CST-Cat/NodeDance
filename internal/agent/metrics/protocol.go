@@ -8,16 +8,10 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
 
-// ToProtocolMetrics converts a Collector snapshot to the shared wire DTO. It
-// intentionally does not add Agent identity, connection generation, or message
-// sequence; those values come from the authenticated Agent runtime.
 func ToProtocolMetrics(snapshot Snapshot) protocol.MetricsSnapshot {
 	return ToProtocolMetricsAt(snapshot, time.Now())
 }
 
-// ToProtocolMetricsAt allows deterministic testing of monotonic sample age.
-// Production callers use ToProtocolMetrics so age is captured just before the
-// report is serialized and sent.
 func ToProtocolMetricsAt(snapshot Snapshot, serializedAt time.Time) protocol.MetricsSnapshot {
 	out := protocol.MetricsSnapshot{
 		CollectedAt: snapshot.CollectedAt.UTC(),
@@ -66,9 +60,6 @@ func ToProtocolMetricsAt(snapshot Snapshot, serializedAt time.Time) protocol.Met
 	return boundProtocolDetails(out)
 }
 
-// boundProtocolDetails keeps resource metrics intact when an unusually large
-// host inventory would exceed the wire limit. The collector sorts details, so
-// truncation is deterministic and explicitly marked in the payload.
 func boundProtocolDetails(snapshot protocol.MetricsSnapshot) protocol.MetricsSnapshot {
 	if snapshot.Host != nil && snapshot.Host.Observability != nil {
 		o := snapshot.Host.Observability
@@ -109,8 +100,6 @@ func boundProtocolDetails(snapshot protocol.MetricsSnapshot) protocol.MetricsSna
 
 	originalInterfaces := snapshot.Network.Interfaces
 	originalDisk := snapshot.Disk
-	// Include truncation metadata and the empty-disk state in every size
-	// check, not just after selecting a prefix that barely fits.
 	setMounts := func(count int) {
 		snapshot.Disk = originalDisk
 		snapshot.Disk.Mounts = originalDisk.Mounts[:count]
@@ -284,8 +273,6 @@ func sourceFailureReason(reason string) bool {
 	case "timeout", "unavailable", "read_failed", "invalid_data", "invalid_interval":
 		return true
 	default:
-		// Permission denial, CPU warm-up/counter reset, unavailable topology,
-		// and asynchronous disk states remain unknown with their exact reason.
 		return false
 	}
 }

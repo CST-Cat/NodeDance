@@ -1,5 +1,3 @@
-// Package compose discovers Compose inventory from Docker Engine labels and
-// executes Compose changes through the shared Core Task and Agent TaskJournal.
 package compose
 
 import (
@@ -48,8 +46,6 @@ func NewManager(engine Engine) (*Manager, error) {
 	return &Manager{engine: engine, dockerPath: dockerPath, projectLocks: make(map[string]*projectLock)}, nil
 }
 
-// lockProject serializes all dispatched Compose writes for one canonical
-// project reference while allowing unrelated projects to proceed concurrently.
 func (m *Manager) lockProject(ctx context.Context, ref protocol.ComposeProjectRef) (func(), error) {
 	if ctx == nil || protocol.ValidateComposeProjectRef(ref) != nil {
 		return nil, ErrProjectConflict

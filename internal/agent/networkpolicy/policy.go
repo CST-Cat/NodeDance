@@ -1,5 +1,3 @@
-// Package networkpolicy shares Agent DNS and IP preferences across transports
-// and outbound probes without modifying the machine's resolver configuration.
 package networkpolicy
 
 import (

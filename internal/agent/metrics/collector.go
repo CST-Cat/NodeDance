@@ -81,9 +81,6 @@ func newCollector(source collectorSource, now func() time.Time, diskTimeout time
 	return c
 }
 
-// Sample collects the fast host metrics synchronously. Disk sampling is
-// intentionally separate; Start schedules it through a single-active-scan
-// poller so a stuck statfs call cannot delay CPU, memory, network, or uptime.
 func (c *Collector) Sample(ctx context.Context) Snapshot {
 	c.sampleMu.Lock()
 	defer c.sampleMu.Unlock()
@@ -104,10 +101,6 @@ func (c *Collector) Sample(ctx context.Context) Snapshot {
 	return snapshot
 }
 
-// SampleDisk requests one full disk scan. It waits at most the configured
-// timeout and returns worker_busy if an earlier scan has not returned. A
-// timed-out syscall may finish later, but no retry goroutine is created while
-// that scan remains active.
 func (c *Collector) SampleDisk(ctx context.Context) DiskSnapshot {
 	result := c.diskPoller.sample(ctx)
 	c.stateMu.Lock()
@@ -116,10 +109,6 @@ func (c *Collector) SampleDisk(ctx context.Context) DiskSnapshot {
 	return result
 }
 
-// Start runs one 5-second fast sampler and one 30-second disk scheduler. The
-// returned channel has capacity one and keeps only the newest snapshot, so a
-// slow transport consumer cannot block host sampling. Call Start once with the
-// Agent lifetime context.
 func (c *Collector) Start(ctx context.Context) <-chan Snapshot {
 	c.startOnce.Do(func() {
 		c.updates = make(chan Snapshot, 1)
@@ -141,9 +130,6 @@ func (c *Collector) Start(ctx context.Context) <-chan Snapshot {
 	return c.updates
 }
 
-// Done closes after both periodic sampler loops have exited. A timed-out
-// context-ignoring disk syscall may remain isolated inside the single bounded
-// disk poller, but no scheduler or fast-sampler goroutine survives shutdown.
 func (c *Collector) Done() <-chan struct{} {
 	return c.done
 }

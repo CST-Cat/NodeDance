@@ -1,7 +1,5 @@
 const {selectValue,selectedValue,readOptions}=require('./arc-controls.cjs')
 const {setBrowserLanguage}=require('./browser-language.cjs')
-// Isolated real Core and fresh embedded Web. Fixtures only touch this script's
-// temporary SQLite database; production resources and real Agents are never used.
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=require('node:net')
 const {spawn,execFileSync}=require('node:child_process'),{chromium}=require('playwright')
 const root=path.resolve(__dirname,'../..'),binary=path.join(root,'.build/nodedance'),artifacts=path.join(root,'.build/feed-audit')
@@ -23,8 +21,6 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   await form.locator('[name=feedName]').fill(malicious);await form.locator('[name=feedUrl]').fill('http://127.0.0.1/feed');await selectValue(form.locator('button[data-dropdown-field][data-field-name=feedInterval]'),'1');await form.getByRole('checkbox').first().uncheck()
   let response=page.waitForResponse(r=>r.url()===base+'/api/v1/feeds'&&r.request().method()==='POST');await form.getByRole('button',{name:'Save',exact:true}).click();const created=await response;assert.equal(created.status(),200);let subscription=await created.json();assert.equal(subscription.intervalMinutes,1)
   await view.getByRole('button',{name:malicious,exact:true}).waitFor()
-  // Seed untrusted strings directly into the isolated store to verify the Web
-  // rendering boundary independently of the parser's own plain-text conversion.
   const seededEntries=55;execFileSync('python3',['-c',`import sqlite3,sys,time,hashlib
 c=sqlite3.connect(sys.argv[1]);feed=sys.argv[2];now=int(time.time())
 for i in range(int(sys.argv[4])):
@@ -52,7 +48,6 @@ c.commit();c.close()`,path.join(directory,'nodedance.sqlite'),subscription.id,ma
   await view.getByRole('checkbox',{name:'Unread only',exact:true}).check();await assertEventually(async()=>await view.locator('.feed-entry h3').count()===Math.min(firstPageCount,seededEntries-1))
   await view.getByRole('searchbox',{name:'Search',exact:true}).fill(`Entry ${seededEntries-1}`);await view.getByRole('button',{name:'Search',exact:true}).click();await assertEventually(async()=>await view.locator('.feed-entry h3').count()===1)
   await view.getByRole('searchbox').fill('');await view.getByRole('button',{name:'Search',exact:true}).click()
-  // A real Core fetch must reject loopback before connecting to port 80.
   await view.getByRole('button',{name:'Enable',exact:true}).click();await assertEventually(async()=>{const r=await context.request.get(base+'/api/v1/feeds/'+subscription.id);subscription=await r.json();return subscription.status==='failed'})
   await view.getByRole('button',{name:'Refresh',exact:true}).click();await view.getByRole('button',{name:'Cancel refresh',exact:true}).waitFor();await view.getByRole('button',{name:'Cancel refresh',exact:true}).click();await assertEventually(async()=>{const r=await context.request.get(base+'/api/v1/feeds/'+subscription.id);return (await r.json()).status==='canceled'})
   await view.getByRole('button',{name:'Edit',exact:true}).click();await form.locator('[name=feedCustomInterval]').fill('7');await form.getByRole('button',{name:'Save',exact:true}).click();await assertEventually(async()=>{const r=await context.request.get(base+'/api/v1/feeds/'+subscription.id);return (await r.json()).intervalMinutes===7})
@@ -66,6 +61,7 @@ c.commit();c.close()`,path.join(directory,'nodedance.sqlite'),subscription.id,ma
   }
   await setBrowserLanguage(page,'en');await page.reload();await view.waitFor()
   await view.getByRole('checkbox',{name:'Confirm deletion of this subscription and its entries',exact:true}).check();await view.getByRole('button',{name:'Delete',exact:true}).click();await assertEventually(async()=>(await context.request.get(base+'/api/v1/feeds/'+subscription.id)).status()===404)
+  await require('./feed-address-regressions.cjs')()
   assert.deepEqual(errors,[]);console.log("audit-feeds passed.")
  }finally{if(browser)await browser.close();if(core.exitCode===null){core.kill('SIGTERM');await new Promise(r=>core.once('exit',r))};fs.rmSync(directory,{recursive:true,force:true})}
 })().catch(e=>{console.error(e);process.exitCode=1})

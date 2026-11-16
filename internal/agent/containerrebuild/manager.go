@@ -71,8 +71,6 @@ func NewManager(engine Engine, journal TaskJournal, store *Store, options Option
 	return &Manager{engine: engine, journal: journal, store: store, opts: options}, nil
 }
 
-// Plan performs a fresh Engine Inspect and refuses unsupported settings before
-// any task is accepted or resource is changed.
 func (m *Manager) Plan(ctx context.Context, containerID string, spec protocol.RebuildSpec) (Plan, error) {
 	current, err := m.engine.Inspect(ctx, containerID)
 	if err != nil {
@@ -273,7 +271,6 @@ func (m *Manager) runForward(ctx context.Context, record *Record, initial Contai
 				return ErrRecoveryRequired
 			}
 			if err := m.engine.DisconnectNetwork(ctx, networkIdentifier(name, endpoint), record.OriginalID); err != nil {
-				// A prior attempt may already have disconnected this endpoint.
 				latest, inspectErr := m.engine.Inspect(ctx, record.OriginalID)
 				if inspectErr != nil || hasNetwork(latest.Networks, name) {
 					return err
@@ -480,9 +477,6 @@ func (m *Manager) Reconcile(ctx context.Context, taskID string) (taskjournal.Sna
 	if record.Outcome == "succeeded" {
 		newContainer, verifyErr := m.verifyPersistedSuccess(ctx, record)
 		if verifyErr != nil {
-			// The durable record says the forward operation was verified, but the
-			// current Engine state no longer proves that result. Keep both the
-			// replacement and rollback resources untouched for explicit recovery.
 			return m.markUnknown(ctx, taskID, verifyErr)
 		}
 		return m.finishSucceeded(ctx, taskID, stateToken(newContainer), record.NewID)
@@ -493,8 +487,6 @@ func (m *Manager) Reconcile(ctx context.Context, taskID string) (taskjournal.Sna
 			return m.finishRestoredFailure(ctx, taskID, record.ErrorCode, record.OriginalID)
 		}
 	}
-	// Recovery never replays forward. It either verifies a fully-created
-	// replacement, or performs an explicit compensating restore of the original.
 	return m.rollback(ctx, record, firstNonEmpty(record.ErrorCode, "agent_restart_recovery"))
 }
 
@@ -593,9 +585,6 @@ func (m *Manager) resumeCleanup(ctx context.Context, task taskjournal.Snapshot, 
 	} else {
 		return m.finishFailed(ctx, task.TaskID, "unchanged", "cleanup_not_ready")
 	}
-	// Inspect and validate every resource before deleting the old container.
-	// In particular, never destroy the only rollback instance when the new
-	// instance or a snapshot has an unexpected identity or owner marker.
 	var oldContainer *Container
 	if record.Outcome == "succeeded" {
 		old, inspectErr := m.engine.Inspect(context.WithoutCancel(ctx), record.OriginalID)
@@ -752,8 +741,6 @@ func createConfig(current Container, spec protocol.RebuildSpec, taskID, snapshot
 	return &config, &host, endpoints, nil
 }
 
-// clearEndpointRuntimeFields retains configured aliases and IPAM requests but
-// drops address/ID values assigned to the old container endpoint.
 func clearEndpointRuntimeFields(endpoint *network.EndpointSettings) {
 	if endpoint == nil {
 		return
@@ -800,11 +787,6 @@ func (m *Manager) waitHealthyAndPorts(ctx context.Context, record *Record) error
 	}
 }
 
-// verifyNetworkAttachments checks the replacement against the network
-// configuration captured before the rebuild. Runtime aliases such as
-// DNSNames are intentionally ignored: Docker derives them from the new
-// container identity. Configured aliases, IPAM requests, and network identity
-// remain part of the expected configuration.
 func verifyNetworkAttachments(want, actual map[string]*network.EndpointSettings, requireRuntime bool, originalContainerID string) bool {
 	if len(want) != len(actual) {
 		return false
@@ -966,10 +948,6 @@ func (m *Manager) finishFailed(ctx context.Context, taskID, state, code string) 
 	return m.finish(ctx, taskID, taskstate.Failed, taskjournal.Result{Code: taskjournal.ResultFailed, ObservedState: safeState(state), ResourceRevision: boundedCode(code)})
 }
 
-// finishRestoredFailure records the restored container identity as the result
-// revision so Core can offer explicit cleanup of a failed rebuild's temporary
-// writable-layer snapshot. The bounded observed-state token retains both the
-// restoration outcome and the safe failure class.
 func (m *Manager) finishRestoredFailure(ctx context.Context, taskID, code, originalID string) (taskjournal.Snapshot, error) {
 	observed := safeState("restored:" + boundedCode(code))
 	return m.finish(ctx, taskID, taskstate.Failed, taskjournal.Result{

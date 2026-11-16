@@ -6,8 +6,6 @@ import (
 	"time"
 )
 
-// Diagnostic definitions are the shared source for collection, alerts, history
-// and all three presentations. Entity identity is never a time-series label.
 type MetricDefinition struct {
 	Name        string `json:"name"`
 	NameZH      string `json:"nameZh"`
@@ -201,8 +199,6 @@ func VisitObservability(o *Observability, f func(*Metric[float64], time.Duration
 	}
 }
 
-// CatalogDefinitions includes established history keys without making them
-// duplicate Agent diagnostic samples. Mount keys are derived from node mounts.
 func CatalogDefinitions() map[string]MetricDefinition {
 	out := map[string]MetricDefinition{}
 	for k, v := range DiagnosticDefinitions {

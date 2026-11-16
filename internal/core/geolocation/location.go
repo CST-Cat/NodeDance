@@ -6,8 +6,6 @@ import (
 	"unicode"
 )
 
-// Position is shared by manual preferences, the city directory and resolved
-// locations. Pointers distinguish a valid zero coordinate from a missing value.
 type Position struct {
 	CountryCode string   `json:"countryCode"`
 	City        string   `json:"city"`

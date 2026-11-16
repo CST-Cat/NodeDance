@@ -1,5 +1,3 @@
-// Package tailscale reads peers from the existing local Tailscale CLI or daemon
-// socket. It never installs, starts, or configures Tailscale.
 package tailscale
 
 import (
@@ -42,7 +40,6 @@ func (ExecRunner) Run(ctx context.Context, name string, args ...string) ([]byte,
 	return exec.CommandContext(ctx, name, args...).CombinedOutput()
 }
 
-// Services can have a smaller PATH than an interactive administrator shell.
 func findCLI(candidates []string) (string, error) {
 	if binary, err := exec.LookPath("tailscale"); err == nil {
 		return binary, nil
@@ -55,8 +52,6 @@ func findCLI(candidates []string) (string, error) {
 	return "", exec.ErrNotFound
 }
 
-// Query an existing daemon without installing, starting, or configuring it.
-// This also supports Core containers with the host's socket explicitly mounted.
 func localStatus(ctx context.Context, socket string) ([]byte, error) {
 	if _, err := os.Stat(socket); errors.Is(err, os.ErrNotExist) {
 		return nil, exec.ErrNotFound
@@ -112,8 +107,7 @@ type rawPeer struct {
 }
 
 type Discovery struct {
-	Runner Runner
-	// ReadPeers supplies the deployment host's normalized, read-only view.
+	Runner    Runner
 	ReadPeers func(context.Context) ([]Peer, error)
 }
 

@@ -72,8 +72,6 @@ func (s *Server) handleGuestPublic(w http.ResponseWriter, r *http.Request) {
 func (s *Server) cachedGuestDisplay(ctx context.Context, settings guest.Settings) (*guestDisplay, error) {
 	s.guestMu.Lock()
 	defer s.guestMu.Unlock()
-	// Resource removal changes the public scope independently of publication
-	// settings. Recheck it on every read, even when metric data is cached.
 	settings, err := (guest.Store{DB: s.store.DB}).AvailableResources(ctx, settings)
 	if err != nil {
 		return nil, err

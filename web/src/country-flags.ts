@@ -1,4 +1,3 @@
-// Bundled Twemoji country flags; license in public/licenses/country-flags-notices.txt.
 export const countryFlags = new Set([
   "ad",
   "ae",

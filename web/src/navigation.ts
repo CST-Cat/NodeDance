@@ -40,8 +40,6 @@ export const navigationKey: ContextKey<ViewNavigation> =
   Symbol("view-navigation");
 const screens = new Set<ViewScreen>(viewScreens);
 
-// This is browser-local view state. Neither URLs nor history.state grant access,
-// and no form, credential, task submission or terminal action is serialized.
 export function readViewRoute(): ViewRoute {
   const [path, query = ""] = window.location.hash.slice(1).split("?");
   const screen = path?.replace(/^\//, "") as ViewScreen;

@@ -1,5 +1,3 @@
-// Package probes owns Core configuration, scheduler state, and durable service
-// probe history. Probe execution itself is performed by the enrolled Agent.
 package probes
 
 import (
@@ -253,9 +251,6 @@ func (s *Store) List(ctx context.Context) ([]Config, error) {
 	return s.list(ctx, ` WHERE deleted_at IS NULL`)
 }
 
-// ListIncludingDeleted returns retained configurations so callers can keep
-// their history accessible after a soft delete. Deleted probes are never
-// schedulable and their history is read-only.
 func (s *Store) ListIncludingDeleted(ctx context.Context) ([]Config, error) {
 	return s.list(ctx, ``)
 }
@@ -577,17 +572,10 @@ func (s *Store) MarkNodeUnknown(ctx context.Context, nodeID string, at time.Time
 		if err != nil {
 			return err
 		}
-		// Preserve one durable node_offline transition per probe instead of
-		// appending a run on every scheduler tick while the Agent stays offline.
-		// Unknown is still a meaningful transition when its previous cause was
-		// a timeout, capability gap, or the initial unobserved state.
 		if _, err := tx.ExecContext(ctx, `INSERT INTO service_probe_runs(run_id,probe_id,node_id,probe_revision,generation,kind,expected_http_status,status,checked_at,completed_at,error_code,timeout_seconds) SELECT ?,id,node_id,revision,0,kind,expected_http_status,'unknown',?,?, 'node_offline',timeout_seconds FROM service_probes WHERE id=? AND revision=? AND enabled=1 AND deleted_at IS NULL AND NOT (status='unknown' AND COALESCE(last_error_code,'')='node_offline')`, runID, now.UnixNano(), now.UnixNano(), value.id, value.revision); err != nil {
 			_ = tx.Rollback()
 			return err
 		}
-		// A due offline probe is deferred by its configured interval, not
-		// repeatedly claimed as an executable run. This keeps the pending-run
-		// table empty and avoids unbounded duplicate offline history.
 		nextDue := now.Add(time.Duration(value.interval) * time.Second).UnixNano()
 		if _, err := tx.ExecContext(ctx, `UPDATE service_probes SET status='unknown',last_error_code='node_offline',last_checked_at=?,next_due_at=?,consecutive_failures=0,consecutive_successes=0,updated_at=? WHERE id=? AND revision=? AND enabled=1 AND deleted_at IS NULL`, now.UnixNano(), nextDue, now.UnixNano(), value.id, value.revision); err != nil {
 			_ = tx.Rollback()

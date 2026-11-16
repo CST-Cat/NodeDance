@@ -66,9 +66,6 @@ func Enroll(ctx context.Context, server, caFile string, development bool, tokenR
 	defer client.CloseIdleConnections()
 	result, err := consumeEnrollment(ctx, client, config)
 	if err != nil {
-		// The request may have committed even if the response was lost. Resolve
-		// identity only with the already-persisted device credential; never
-		// replay the one-use enrollment token or store it in Core.
 		if recovered, recoverErr := lookupIdentity(ctx, client, config, credential); recoverErr == nil && recovered.CredentialState == "active" {
 			result = recovered
 			err = nil
@@ -127,8 +124,6 @@ func Recover(ctx context.Context, configPath string) error {
 	config.NodeID, config.AgentID = result.NodeID, result.AgentID
 	config.EnrollmentToken = ""
 	if usedPendingCredential {
-		// Only Core's active state proves its transaction promoted the pending
-		// verifier and retired the old one. Pending alone is not an ACK.
 		config.Credential = config.PendingCredential
 		config.PendingCredential = ""
 		config.PendingRotationID = ""

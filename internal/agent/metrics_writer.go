@@ -34,10 +34,6 @@ type envelopeWrite struct {
 	stream   bool
 }
 
-// socketEnvelopeWriter serializes all post-handshake writes. Control messages
-// have a reserved queue and are selected ahead of coalesced metric snapshots.
-// A metrics write has a short deadline so a slow peer cannot hold heartbeat
-// traffic behind an obsolete telemetry frame.
 type socketEnvelopeWriter struct {
 	conn                  protocol.AgentChannel
 	ctx                   context.Context
@@ -71,8 +67,6 @@ func newSocketEnvelopeWriter(ctx context.Context, conn protocol.AgentChannel) *s
 	return w
 }
 
-// offerStream keeps log and on-demand stats data in a separate low-priority,
-// strictly bounded queue. A slow peer fails only the requested stream.
 func (w *socketEnvelopeWriter) offerStream(ctx context.Context, envelope protocol.Envelope) error {
 	if w == nil || w.streams == nil {
 		return errStreamWriterUnavailable
@@ -95,8 +89,6 @@ func (w *socketEnvelopeWriter) offerStream(ctx context.Context, envelope protoco
 	}
 }
 
-// offerTerminal preserves terminal output order in a bounded queue. A saturated
-// browser cannot grow Agent memory or hold heartbeat writes behind terminal IO.
 func (w *socketEnvelopeWriter) offerTerminal(ctx context.Context, envelope protocol.Envelope) error {
 	select {
 	case w.terminal <- envelope:
@@ -161,9 +153,6 @@ func (w *socketEnvelopeWriter) markStreamFailure(requestID string, err error) {
 	}
 }
 
-// offerDocker preserves FIFO ordering and never overwrites a snapshot chunk.
-// If the bounded queue fills, the observer treats this batch as lost and asks
-// the discoverer for a new authoritative full snapshot.
 func (w *socketEnvelopeWriter) offerDocker(ctx context.Context, envelope protocol.Envelope) error {
 	select {
 	case w.docker <- envelope:
@@ -177,8 +166,6 @@ func (w *socketEnvelopeWriter) offerDocker(ctx context.Context, envelope protoco
 	}
 }
 
-// closeAndWait cancels queued work and joins the single socket writer before
-// the Agent can reconnect and create another writer for the same process.
 func (w *socketEnvelopeWriter) closeAndWait() bool {
 	w.cancel()
 	timer := time.NewTimer(controlWriteTimeout + time.Second)
@@ -210,14 +197,10 @@ func (w *socketEnvelopeWriter) send(ctx context.Context, envelope protocol.Envel
 	}
 }
 
-// Send exposes the serialized control lane to internal feature bridges without
-// giving them direct access to the WebSocket connection.
 func (w *socketEnvelopeWriter) Send(ctx context.Context, envelope protocol.Envelope) error {
 	return w.send(ctx, envelope)
 }
 
-// offerMetrics keeps at most the latest not-yet-written snapshot. Losing an
-// intermediate telemetry sample is preferable to delaying heartbeat/control.
 func (w *socketEnvelopeWriter) offerMetrics(envelope protocol.Envelope) {
 	select {
 	case w.metrics <- envelope:
@@ -237,9 +220,6 @@ func (w *socketEnvelopeWriter) offerMetrics(envelope protocol.Envelope) {
 
 func (w *socketEnvelopeWriter) run() {
 	defer close(w.done)
-	// Weighted rotation bounds each data lane's burst. Even a permanently
-	// nonempty Docker queue yields to every other ready lane. Control work
-	// is checked before every frame, including frames within a burst.
 	lanes := [...]struct {
 		queue   chan protocol.Envelope
 		burst   int
@@ -293,7 +273,6 @@ func (w *socketEnvelopeWriter) run() {
 		if sent {
 			continue
 		}
-		// All lanes were empty; sleep until work or cancellation arrives.
 		select {
 		case <-w.ctx.Done():
 			return

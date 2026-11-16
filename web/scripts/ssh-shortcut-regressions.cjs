@@ -1,5 +1,4 @@
 const {closeNavigation}=require('./sidebar-navigation.cjs')
-// Isolated Core preferences plus synthetic machine observations; never connect over SSH.
 const assert=require('node:assert/strict'),path=require('node:path')
 module.exports=async function({page,base,headers,artifacts,catalog}){
  const operation=name=>{const result=catalog.operations.find(o=>o.name===name);assert.ok(result);return result}
@@ -20,16 +19,11 @@ module.exports=async function({page,base,headers,artifacts,catalog}){
  await page.routeWebSocket('**'+routePath('dashboard.watch'),ws=>{socket=ws})
  await page.addInitScript(()=>Object.defineProperty(navigator,'clipboard',{value:{writeText:async value=>{window.sshCopiedCommand=value}}}))
  const initial=await page.request.get(base+routePath('nodes.preferences'));assert.deepEqual((await initial.json()).preferences,[],'No stored connection or remembered login is required')
- // Park discovery from the start so the clicked Copy SSH button is guaranteed
- // to hit a pending detection below.
  parkDiagnostics=true
  await page.goto(base+'/#/nodes')
  const shortcut=page.getByTestId('node-ssh-shortcut')
  const dialog=page.locator('dialog.ui-dialog[open]')
  await shortcut.waitFor();assert.ok(await shortcut.isEnabled())
- // Copy feedback: every bubble is a pure floating overlay. The card, telemetry,
- // Docker toggle and every action row must keep exactly the same boxes before,
- // during and after the popup; only the popup itself may have geometry.
  const layoutProbe=()=>page.evaluate(()=>{
   const card=document.querySelector('.vps-card')
   const c=card.getBoundingClientRect()
@@ -37,7 +31,7 @@ module.exports=async function({page,base,headers,artifacts,catalog}){
   for(const el of [card,...card.querySelectorAll('*')]){
    if(el.classList.contains('vps-card-ssh-pop') || el.closest('.ui-copy-result'))continue
    const r=el.getBoundingClientRect()
-   if(r.width===0&&r.height===0)continue // zero-area anchors (svg titles) have no geometry
+   if(r.width===0&&r.height===0)continue
    rects.push([Math.round((r.left-c.left)*2)/2,Math.round((r.top-c.top)*2)/2,Math.round(r.width*2)/2,Math.round(r.height*2)/2])
   }
   return rects
@@ -53,8 +47,6 @@ module.exports=async function({page,base,headers,artifacts,catalog}){
   assert.ok(above,'Copy feedback must float immediately above the clicked Copy SSH button')
   if(popBox&&buttonBox)assert.ok(popBox.x+popBox.width>buttonBox.x&&popBox.x<buttonBox.x+buttonBox.width,'Copy feedback must be anchored to the clicked button column')
  }
- // Let the dashboard finish its initial telemetry render so the baseline
- // reflects steady layout, not a transient settling state.
  await page.waitForFunction(()=>document.querySelectorAll('.vps-telemetry .resource-gauge').length>=4,'telemetry rendered',{timeout:8000}).catch(()=>{})
  await page.waitForTimeout(1000)
  const beforeLayout=await layoutProbe()
@@ -74,8 +66,6 @@ module.exports=async function({page,base,headers,artifacts,catalog}){
  const discovered={status:200,ssh:{status:'available',hosts:['2001:db8::1'],ports:[2222],users:['machine_user'],host:'2001:db8::1',port:2222,user:'machine_user',command:'ssh -p 2222 machine_user@2001:db8::1',commands:{machine_user:'ssh -p 2222 machine_user@2001:db8::1'},source:'discovered',sampledAt:new Date().toISOString()}}
  for(const held of parked)await held.fulfill({json:discovered})
  parked=[]
- // Resolved discovery opens the account dialog; nothing is copied until the
- // user explicitly confirms, even for a single account.
  await dialog.waitFor()
  assert.equal(await page.locator('dialog.ui-dialog[open]').count(),1,'Resolved discovery must open the account dialog instead of copying')
  const single=dialog.getByRole('radio')
@@ -96,8 +86,6 @@ module.exports=async function({page,base,headers,artifacts,catalog}){
  await shortcut.locator('[data-copy-state=idle]').waitFor({timeout:6000})
  await assertLayoutStable('after inline success resets',beforeLayout)
  assert.equal(await page.locator('.vps-card-ssh-status,.vps-card-status').count(),0,'No persistent SSH feedback or status lines remain under the card')
- // The same overlay behaviour must hold on the narrow 390px layout, where the
- // Copy SSH button shares the card with a second row.
  await page.setViewportSize({width:390,height:1000})
  const beforeNarrow=await layoutProbe()
  await shortcut.click();await dialog.waitFor()
@@ -113,9 +101,6 @@ module.exports=async function({page,base,headers,artifacts,catalog}){
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth))
 
  }
- // Ambiguous accounts move the choice behind the copy dialog; the card no
- // longer hosts an account picker and nothing is copied without explicit
- // confirmation in the dialog, whatever the account count.
  ambiguous=true;await page.reload();await shortcut.click();await dialog.waitFor()
  const options=dialog.getByRole('radio')
  assert.equal(await options.count(),3,'The resolved default plus every discovered account is offered')
@@ -147,11 +132,6 @@ module.exports=async function({page,base,headers,artifacts,catalog}){
  await dialog.getByRole('button',{name:'Copy SSH',exact:true}).click()
  await page.waitForFunction(()=>window.sshCopiedCommand==='ssh -p 2222 other_user@2001:db8::1')
  assert.equal(await page.evaluate(()=>window.sshCopiedCommand),'ssh -p 2222 other_user@2001:db8::1','Last observed connection remains copyable offline')
- // A saved custom connection (host/user/custom port from the node
- // preferences) participates in the same dialog even while discovery is
- // unavailable: the button opens the dialog immediately, the saved entry is
- // listed, preselected and only copied after explicit confirmation, and
- // Cancel/Escape keep the clipboard untouched.
  const savedPreference={targetKind:'node',identity:'node:'+node,alias:'',icon:'',notes:'',serviceUrl:'',sshHost:'203.0.113.77',sshUser:'ubuntu',sshPort:2202,group:'',sortOrder:0,visible:true,pinned:false}
  const savedCommand='ssh -p 2202 ubuntu@203.0.113.77'
  const saved=(await page.request.put(base+routePath('nodes.save-preference'),{headers,data:savedPreference}))
@@ -172,9 +152,6 @@ module.exports=async function({page,base,headers,artifacts,catalog}){
  await dialog.getByRole('button',{name:'Copy SSH',exact:true}).click()
  await page.waitForFunction(value=>window.sshCopiedCommand===value,savedCommand)
  await dialog.waitFor({state:'hidden'})
- // Discovered accounts stay offered next to the saved connection, which keeps
- // the preferred preselection; a saved entry that repeats a discovered
- // command collapses to a single choice instead of a duplicate.
  online=true;ambiguous=true;parkDiagnostics=false;parked=[]
  await page.reload();await shortcut.waitFor()
  const reopenWithChoices=async count=>{

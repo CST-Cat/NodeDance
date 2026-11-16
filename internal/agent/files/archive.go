@@ -109,7 +109,6 @@ type archiveItem struct {
 
 func (item archiveItem) directory() bool { return item.mode.IsDir() }
 
-// One path/type/size policy is shared by every supported archive format.
 func (s *Service) validateArchiveItem(item archiveItem, target string, seen map[string]archiveItem, total *int64) error {
 	name := item.name
 	if name == "" || strings.ContainsAny(name, "\\\x00") || strings.HasPrefix(name, "/") || path.Clean(name) != name || len(strings.Split(name, "/")) > maxWalkDepth {
@@ -222,7 +221,6 @@ func (s *Service) extractArchiveRoot(ctx context.Context, source *os.File, size 
 			} else if string(magic[:3]) == "BZh" {
 				input = bzip2.NewReader(source)
 			}
-			// Bound expanded payload plus archive headers, padding and PAX metadata.
 			bound := &archiveReadBound{ctx: ctx, reader: input, remaining: s.limit + int64(maxWalkEntries)*4096}
 			reader := tar.NewReader(bound)
 			count := 0

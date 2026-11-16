@@ -14,9 +14,6 @@ const GLOBE_CONFIG: COBEOptions = {
   glowColor: [1, 1, 1], markers: [], arcs: [],
 }
 
-/** The shadcn Globe with its existing pointer/spring behavior, using COBE v2's
- * update lifecycle. Native options pass through unchanged; children share COBE's
- * wrapper so CSS-anchored shadcn labels can follow marker and arc ids. */
 export function Globe({ className, config = GLOBE_CONFIG, onFrame, children }: {
   className?: string
   config?: COBEOptions
@@ -46,8 +43,6 @@ export function Globe({ className, config = GLOBE_CONFIG, onFrame, children }: {
 
   useLayoutEffect(() => {
     const canvas = canvasRef.current!, host = canvas.parentElement!
-    // COBE returns a silent no-op without WebGL. Let the page's existing error
-    // boundary show the renderer-unavailable state instead of a blank canvas.
     const context = { alpha: true, stencil: false, antialias: true, depth: false, preserveDrawingBuffer: false, ...current.current.config.context }
     if (!canvas.getContext("webgl2", context) && !canvas.getContext("webgl", context)) throw new Error("WebGL unavailable")
     const size = canvas.offsetWidth
@@ -75,8 +70,6 @@ export function Globe({ className, config = GLOBE_CONFIG, onFrame, children }: {
       resize.disconnect()
       globeRef.current = null
       globe.destroy()
-      // v2 owns its anchor wrapper but does not unwrap the canvas on destroy.
-      // Restore React's original DOM ownership before React removes the canvas.
       if (wrapper !== host && wrapper.parentElement === host) {
         host.insertBefore(canvas, wrapper)
         wrapper.remove()

@@ -1,4 +1,3 @@
-// Package agents owns Core-side Agent enrollment, device identity and leases.
 package agents
 
 import (
@@ -18,10 +17,6 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/core/guest"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
-
-// Enrollment tokens are single-use with no time limit: a credential stays
-// valid until a device consumes it, and consumption invalidates it
-// immediately. Renewal replaces any outstanding token for the node.
 
 var (
 	ErrEnrollmentRejected = errors.New("enrollment credential rejected")
@@ -83,9 +78,6 @@ func NewRepository(db *sql.DB, now func() time.Time) *Repository {
 	return &Repository{db: db, now: now}
 }
 
-// CreateEnrollment creates the pending node and its one-use credential in the
-// same transaction. Only the digest is persisted; the raw token is returned
-// once to the authenticated administrator.
 func (r *Repository) CreateEnrollment(ctx context.Context, displayName, remote string, actor sql.NullInt64, assets ...protocol.NodeAsset) (Enrollment, error) {
 	if len(assets) > 1 {
 		return Enrollment{}, errors.New("only one node asset is allowed")
@@ -118,8 +110,6 @@ func (r *Repository) CreateEnrollment(ctx context.Context, displayName, remote s
 		VALUES(?, ?, 'pending', ?, ?)`, nodeID, name, now.UnixNano(), now.UnixNano()); err != nil {
 		return Enrollment{}, fmt.Errorf("create pending node: %w", err)
 	}
-	// expires_at stays 0: enrollment credentials are single-use without a time
-	// limit and are invalidated by consumption, not by an expiry clock.
 	if _, err := tx.ExecContext(ctx, `INSERT INTO agent_enrollments(token_digest, node_id, expires_at, created_at)
 		VALUES(?, ?, 0, ?)`, digest, nodeID, now.Unix()); err != nil {
 		return Enrollment{}, fmt.Errorf("create enrollment credential: %w", err)
@@ -142,11 +132,6 @@ func (r *Repository) CreateEnrollment(ctx context.Context, displayName, remote s
 	return Enrollment{NodeID: nodeID, DisplayName: name, Token: token}, nil
 }
 
-// ConsumeEnrollment accepts one-use credentials or bounded shared grants.
-// Each device gets a separate identity. The Agent already generated and
-// durably saved its own device credential before calling this method, so a
-// lost HTTP response is recovered through IdentityByCredential without
-// consuming the enrollment token again.
 func (r *Repository) ConsumeEnrollment(ctx context.Context, enrollmentDigest, deviceDigest []byte, requestID, remote string) (Identity, error) {
 	if len(enrollmentDigest) != 32 || len(deviceDigest) != 32 || strings.TrimSpace(requestID) == "" || len(requestID) > 80 {
 		return Identity{}, ErrEnrollmentRejected
@@ -224,9 +209,6 @@ func (r *Repository) ConsumeEnrollment(ctx context.Context, enrollmentDigest, de
 	return Identity{AgentID: agentID, NodeID: nodeID, DisplayName: name, Status: "offline"}, nil
 }
 
-// IdentityByCredential is intentionally read-only and gives an enrolled
-// device a way to recover the Core-assigned identity after a lost enrollment
-// response. A bearer for any other device returns no identity.
 func (r *Repository) IdentityByCredential(ctx context.Context, digest []byte) (Identity, error) {
 	return r.lookupCredential(ctx, digest)
 }
@@ -266,9 +248,6 @@ func (r *Repository) lookupCredential(ctx context.Context, digest []byte) (Ident
 	return identity, nil
 }
 
-// BeginConnection durably advances the per-node generation before accepting
-// any traffic. Using a pending rotation credential commits the rotation in the
-// same transaction as the new lease and invalidates the old credential.
 func (r *Repository) BeginConnection(ctx context.Context, authenticated Identity, presentedDigest []byte, protocolVersion int, agentVersion string, capabilities string, permissions protocol.RuntimePermissions) (Lease, error) {
 	if len(presentedDigest) != 32 || protocolVersion < 1 || agentVersion == "" || len(agentVersion) > 80 || !validRuntimePermissions(permissions) {
 		return Lease{}, ErrUnauthorized
@@ -384,10 +363,6 @@ func (r *Repository) AcceptHeartbeat(ctx context.Context, identity Identity, gen
 	return now, nil
 }
 
-// ExpireLease is the exact-deadline path used by the per-connection timer.
-// A racing heartbeat can refresh last_seen_at first, in which case this CAS
-// leaves the lease online; a heartbeat arriving after the deadline cannot
-// refresh it because AcceptHeartbeat applies the same cutoff.
 func (r *Repository) ExpireLease(ctx context.Context, nodeID string, generation uint64, offlineAfter time.Duration) (bool, error) {
 	if generation == 0 || offlineAfter <= 0 {
 		return false, ErrStaleConnection
@@ -418,9 +393,6 @@ func (r *Repository) ActiveLeaseLastSeen(ctx context.Context, nodeID string, gen
 	return time.Unix(0, lastSeen).UTC(), true, nil
 }
 
-// MarkExpiredLeases invalidates each expired generation before returning it to
-// the WebSocket manager for closure. A frame already queued by the old reader
-// then fails its SQL generation comparison even if socket closure races it.
 func (r *Repository) MarkExpiredLeases(ctx context.Context, offlineAfter time.Duration) ([]StaleLease, error) {
 	cutoff := r.now().Add(-offlineAfter).UnixNano()
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -713,30 +685,6 @@ func (r *Repository) ListNodes(ctx context.Context) ([]Node, error) {
 	return result, nil
 }
 
-func (r *Repository) AgentChannel(ctx context.Context, agentID string) (Identity, bool, error) {
-	var identity Identity
-	var digest []byte
-	var requested, pending sql.NullString
-	var revoked sql.NullInt64
-	err := r.db.QueryRowContext(ctx, `SELECT d.id, d.node_id, n.display_name, n.status,
-		d.credential_digest, d.rotation_requested_id, d.pending_rotation_id, d.revoked_at,
-		n.connection_generation FROM agent_devices d JOIN nodes n ON n.id=d.node_id WHERE d.id=?`, agentID).
-		Scan(&identity.AgentID, &identity.NodeID, &identity.DisplayName, &identity.Status, &digest,
-			&requested, &pending, &revoked, &identity.ConnectionGeneration)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Identity{}, false, ErrNotFound
-	}
-	if err != nil {
-		return Identity{}, false, err
-	}
-	if revoked.Valid {
-		return Identity{}, false, ErrRevoked
-	}
-	identity.RotationRequestedID = requested.String
-	identity.CredentialRotationID = pending.String
-	return identity, requested.Valid || pending.Valid, nil
-}
-
 func newSecret() (string, []byte, error) {
 	buffer := make([]byte, 32)
 	if _, err := rand.Read(buffer); err != nil {
@@ -747,8 +695,6 @@ func newSecret() (string, []byte, error) {
 }
 
 func digestSecret(value string) []byte {
-	// High-entropy credentials are verifier secrets; SHA-256 is appropriate for
-	// these random 256-bit values and avoids storing a recoverable bearer.
 	return auth.DigestToken(value)
 }
 
@@ -773,8 +719,6 @@ func validText(value string) bool {
 }
 
 func decodeCapabilities(encoded string) []string {
-	// Capabilities are validated before storage. This local helper intentionally
-	// returns an empty list if a future/corrupt value cannot be decoded.
 	var result []string
 	if err := json.Unmarshal([]byte(encoded), &result); err != nil {
 		return []string{}
@@ -794,7 +738,6 @@ func validRuntimePermissions(value protocol.RuntimePermissions) bool {
 	return validText(value.OS) && validText(value.Architecture)
 }
 
-// RenewEnrollment replaces an unconsumed credential without creating another node.
 func (r *Repository) RenewEnrollment(ctx context.Context, nodeID, remote string, actor sql.NullInt64, assets ...protocol.NodeAsset) (Enrollment, error) {
 	if len(assets) > 1 {
 		return Enrollment{}, errors.New("only one node asset is allowed")
@@ -826,8 +769,6 @@ func (r *Repository) RenewEnrollment(ctx context.Context, nodeID, remote string,
 	if _, err = tx.ExecContext(ctx, `DELETE FROM agent_enrollments WHERE node_id=?`, nodeID); err != nil {
 		return Enrollment{}, err
 	}
-	// Single-use without a time limit; the new token immediately invalidates
-	// the previous one for this node.
 	if _, err = tx.ExecContext(ctx, `INSERT INTO agent_enrollments(token_digest,node_id,expires_at,created_at) VALUES(?,?,0,?)`, digest, nodeID, now.Unix()); err != nil {
 		return Enrollment{}, err
 	}
@@ -849,8 +790,6 @@ func (r *Repository) RenewEnrollment(ctx context.Context, nodeID, remote string,
 	return Enrollment{NodeID: nodeID, DisplayName: name, Token: token}, nil
 }
 
-// DeleteNode removes Core-owned state and credentials. It does not uninstall the
-// remote Agent or claim that already dispatched remote work has been stopped.
 func (r *Repository) DeleteNode(ctx context.Context, nodeID, remote string, actor sql.NullInt64) (Identity, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -865,8 +804,6 @@ func (r *Repository) DeleteNode(ctx context.Context, nodeID, remote string, acto
 	if err != nil {
 		return Identity{}, err
 	}
-	// Discarding node history abandons recovery of outstanding tasks. Do not
-	// assert successful execution or confirmed cancellation of remote work.
 	queries := []string{
 		`UPDATE core_tasks SET status='failed',result_code='node_deleted',failure_confirmed=0 WHERE node_id=? AND status IN ('queued','running','unknown')`,
 		`DELETE FROM core_task_audit_events WHERE node_id=?`,

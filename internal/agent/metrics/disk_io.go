@@ -14,8 +14,6 @@ type diskIOBaseline struct {
 	devices map[string]disk.IOCountersStat
 }
 
-// Sum whole physical/virtual hardware devices, excluding partitions and stacked
-// dm/md/loop devices so the same I/O is not counted at multiple block layers.
 func (h *hostCollector) collectDiskIO(ctx context.Context, at time.Time) protocol.Metric[protocol.DiskIO] {
 	counters, err := disk.IOCountersWithContext(ctx)
 	if err != nil {

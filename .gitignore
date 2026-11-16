@@ -13,10 +13,8 @@ coverage.html
 __pycache__/
 *.py[cod]
 
-# Local source references for UI research
 .references/
 design-study/
 .hallmark/
 
-# Agent session state
 .zcode/

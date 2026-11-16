@@ -1,5 +1,4 @@
 const {fillExpanded}=require('./expanded-textarea.cjs')
-// Run after make build. Uses only a temporary real Core with no Agent.
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=require('node:net')
 const {spawn}=require('node:child_process'),{chromium}=require('playwright')
 const root=path.resolve(__dirname,'../..'),directory=fs.mkdtempSync(path.join(os.tmpdir(),'nodedance-navigation-')),artifacts=path.join(root,'.build/navigation-audit')

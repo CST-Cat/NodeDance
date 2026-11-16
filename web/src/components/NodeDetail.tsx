@@ -86,7 +86,6 @@ export default function NodeDetail(input: Props) {
       const props = __props;
       const emit = __emit;
       const viewNavigation = useViewNavigation();
-      // Warm only static UI assets. Opening a node never reads its files.
       let warmup: ReturnType<typeof setTimeout> | undefined;
       afterMount(() => {
         if (!props.readOnly) warmup = setTimeout(() => {
@@ -525,7 +524,6 @@ export default function NodeDetail(input: Props) {
         containerPage.value = 1;
       });
       watchState(sortedContainers, (records) => {
-        // Hidden or removed rows cannot remain targets of the toolbar.
         const ids = new Set(records.map((record) => record.container.id));
         const remaining = selectedContainerIDs.value.filter((id) =>
           ids.has(id),
@@ -851,7 +849,6 @@ export default function NodeDetail(input: Props) {
             )
               return;
           }
-          // Refresh may change state while a confirmation dialog is open.
           const records = ids.map((id) =>
             props.inventory?.containers.find(
               (record) => record.container.id === id,

@@ -52,8 +52,6 @@ def verify(image, architecture, version, artifacts):
 
 
 def test(architecture, version):
-    # A packaging context with no Go or Web sources proves the release image
-    # contains the exact Agent binary that passed the native build and tests.
     with tempfile.TemporaryDirectory(prefix='nodedance-agent-release-images-') as directory:
         context = Path(directory)
         artifacts = context / 'dist'

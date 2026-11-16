@@ -66,8 +66,6 @@ func Open(ctx context.Context, directory string) (*Store, error) {
 	query.Add("_pragma", "busy_timeout(5000)")
 	query.Add("_pragma", "foreign_keys(1)")
 	query.Add("_pragma", "synchronous(FULL)")
-	// Apply connection-local limits through the driver DSN so replacement
-	// physical connections inherit them as well. Keep FULL durability.
 	query.Add("_pragma", "cache_size(-2048)")
 	query.Add("_pragma", "mmap_size(0)")
 	query.Add("_pragma", "temp_store(FILE)")
@@ -232,5 +230,4 @@ func (s *Store) Close() error {
 	return err
 }
 
-// Schema returns the current storage contract for release preflight checks.
 func Schema() string { return schemaSQL + strings.Join(coretasks.SchemaStatements(), "\n") }

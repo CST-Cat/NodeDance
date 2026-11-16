@@ -24,9 +24,6 @@ func newLoginLimiter(max int, duration time.Duration, now func() time.Time) *log
 	return &loginLimiter{entries: make(map[string]loginLimit), max: max, duration: duration, now: now, capacity: 4096}
 }
 
-// reserve atomically counts an attempt before expensive password verification.
-// The threshold request is allowed to complete, while later concurrent requests
-// observe its lockout immediately.
 func (l *loginLimiter) reserve(key string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -66,9 +63,6 @@ func (l *loginLimiter) succeeded(key string) {
 	l.mu.Unlock()
 }
 
-// guestLimiter is a per-client token bucket over the public guest endpoints.
-// The global guest slots bound total concurrency; this keeps one address from
-// holding every slot while other visitors still see the display.
 type guestLimiter struct {
 	mu       sync.Mutex
 	entries  map[string]*guestRate

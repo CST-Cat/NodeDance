@@ -1,5 +1,3 @@
-// Package retention deletes expired Core operational history. Metric retention
-// is owned by core/history and remains independent from this package.
 package retention
 
 import (
@@ -16,7 +14,6 @@ const (
 	MaxDays     = 3650
 )
 
-// Result reports rows deleted by one atomic cleanup transaction.
 type Result struct {
 	HostBatches     int64
 	AuditEntries    int64
@@ -29,11 +26,6 @@ type Result struct {
 	AlertWindows    int64
 }
 
-// Cleanup removes completed history strictly older than now-retention. Rows on
-// the cutoff are retained. Related records are removed in the same transaction
-// as their parent rows so an error cannot leave broken history references.
-// Active or ambiguous work (including task/operation unknown states and alert
-// deliveries queued, sending, or awaiting retry) is always retained.
 func Cleanup(ctx context.Context, db *sql.DB, now time.Time, retention time.Duration) (Result, error) {
 	if db == nil || now.IsZero() || retention <= 0 {
 		return Result{}, errors.New("history retention database, clock, and duration are required")
@@ -62,8 +54,6 @@ func Cleanup(ctx context.Context, db *sql.DB, now time.Time, retention time.Dura
 	if result.AuditEntries, err = remove("audit entries", `DELETE FROM audit_entries WHERE occurred_at < ?`, cutoffSeconds); err != nil {
 		return Result{}, err
 	}
-	// Unattached dispatch/audit facts can expire independently. Task-linked
-	// events stay with their task until that terminal task is eligible below.
 	if result.CoreTaskEvents, err = remove("unlinked Core task events", `DELETE FROM core_task_audit_events WHERE task_id IS NULL AND occurred_at_ns < ?`, cutoffNanos); err != nil {
 		return Result{}, err
 	}
@@ -88,8 +78,6 @@ func Cleanup(ctx context.Context, db *sql.DB, now time.Time, retention time.Dura
 		WHERE status <> 'pending' AND COALESCE(completed_at, checked_at) < ?`, cutoffNanos); err != nil {
 		return Result{}, err
 	}
-	// Deliveries use soft references. Keep all notifications for active alerts,
-	// and keep every delivery that can still be sent, retried, or reconciled.
 	if result.AlertDeliveries, err = remove("completed alert deliveries", `DELETE FROM alert_deliveries AS d
 		WHERE d.status IN ('sent','failed','suppressed') AND d.created_at < ?
 		AND NOT EXISTS (SELECT 1 FROM alerts a WHERE a.id=d.alert_id AND a.status='active')`, cutoffNanos); err != nil {
@@ -122,8 +110,6 @@ func Cleanup(ctx context.Context, db *sql.DB, now time.Time, retention time.Dura
 		OR (disabled_at IS NULL AND ends_at < ?)`, cutoffNanos, cutoffNanos); err != nil {
 		return Result{}, err
 	}
-	// Only complete, observed batches can expire. Partial/offline/unknown work
-	// retains its identity; the cleanup never guesses that dispatch did not run.
 	if result.HostBatches, err = remove("completed host batches", `DELETE FROM host_batches
  WHERE created_at<? AND json_array_length(results_json)=json_array_length(nodes_json)
  AND json_array_length(results_json)>0

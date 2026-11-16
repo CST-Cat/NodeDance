@@ -8,8 +8,6 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/control"
 )
 
-// Both terminal presentations use this executor, including partial-file cleanup
-// and completion observation. Presentation code only binds input and renders.
 func executeFinite(ctx context.Context, client *control.Client, catalog control.Catalog, o control.Operation, in control.Input, upload io.Reader, outputPath string, wait bool, observe func(control.Result)) control.Result {
 	result := control.Result{Operation: o.Name}
 	var download *os.File
@@ -55,12 +53,10 @@ func executeFinite(ctx context.Context, client *control.Client, catalog control.
 	return result
 }
 
-// The local registry is shared. Remote operations always come from Core.
 func terminalOperations(catalog control.Catalog) []control.Operation {
 	return append(append([]control.Operation{}, catalog.Operations...), localOperations()...)
 }
 
-// Upload paths and stdin streams have one binding for both terminal views.
 func uploadInput(path string, stdin io.Reader) (io.Reader, func(), error) {
 	if path == "-" {
 		return stdin, func() {}, nil

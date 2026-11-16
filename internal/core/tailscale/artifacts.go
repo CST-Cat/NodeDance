@@ -28,9 +28,6 @@ type ArtifactLoader interface {
 	Load(osName, arch string) (Artifact, error)
 }
 
-// DirectoryArtifacts loads a release artifact from NODEDANCE_AGENT_ARTIFACT_DIR
-// and verifies its detached Ed25519 signature using the public key configured
-// in NODEDANCE_AGENT_SIGNING_PUBLIC_KEY (base64-encoded raw 32-byte key).
 type DirectoryArtifacts struct{ Directory, PublicKeyBase64 string }
 
 func (l DirectoryArtifacts) Load(osName, arch string) (Artifact, error) {
@@ -77,8 +74,6 @@ func (l DirectoryArtifacts) Load(osName, arch string) (Artifact, error) {
 	return Artifact{Bytes: binary, SHA256: hex.EncodeToString(digest[:]), OS: osName, Arch: arch, Signature: append([]byte(nil), signature...)}, nil
 }
 
-// Check and read the same descriptor so replacements cannot bypass the bound
-// or turn a validated regular file into a symlink or blocking device.
 func readBoundedRegularFile(path string, limit int64) ([]byte, os.FileInfo, error) {
 	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
 	if err != nil {

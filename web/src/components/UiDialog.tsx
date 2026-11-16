@@ -23,8 +23,6 @@ function FormDialog(input: Props) {
   useEffect(() => {
     const dialog = element.current;
     if (!dialog) return;
-    // A closed dialog owns no focus. Its cleanup must not move focus away
-    // from the trigger that is about to open this or another dialog.
     if (!input.open) {
       if (dialog.open) dialog.close();
       return;

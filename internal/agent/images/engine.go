@@ -16,8 +16,6 @@ import (
 	"github.com/moby/moby/client"
 )
 
-// Image is a bounded projection of Docker Engine image metadata. It omits
-// labels and raw Inspect output because both can contain operator data.
 type Image struct {
 	ID         string   `json:"id"`
 	Tags       []string `json:"tags"`
@@ -40,8 +38,6 @@ type Engine interface {
 	Remove(context.Context, string) error
 }
 
-// SDKEngine uses one local Docker Engine client. It has no inbound listener and
-// never persists registry credentials.
 type SDKEngine struct {
 	client *client.Client
 }
@@ -133,10 +129,6 @@ func (e *SDKEngine) Pull(ctx context.Context, ref, authHeader string, report fun
 			report(progress)
 		}
 	}
-	// JSONMessages has consumed the full stream and already surfaced decode,
-	// transport, cancellation, and Engine errorDetail failures. The SDK's
-	// response.Wait method consumes that same one-shot body and is an alternate
-	// to JSONMessages, not a second completion check.
 	return nil
 }
 
@@ -145,9 +137,6 @@ type pullLayerProgress struct {
 	total     uint64
 }
 
-// observePullProgress uses only Docker's progressDetail byte counters. Status
-// text, duplicate messages, and stale counters cannot create or reverse byte
-// progress. A missing total stays unknown until Docker supplies one.
 func observePullProgress(layers map[string]pullLayerProgress, message jsonstream.Message) (PullProgress, bool) {
 	if message.Progress == nil || message.ID == "" || message.Progress.Current < 0 || message.Progress.Total < 0 {
 		return PullProgress{}, false
@@ -161,8 +150,6 @@ func observePullProgress(layers map[string]pullLayerProgress, message jsonstream
 	next := previous
 	if total > next.total {
 		if next.total == 0 && next.completed > total {
-			// A current value observed before its denominator was known cannot
-			// be used if it conflicts with the now-known layer size.
 			next.completed = 0
 		}
 		next.total = total
@@ -177,8 +164,6 @@ func observePullProgress(layers map[string]pullLayerProgress, message jsonstream
 
 	var progress PullProgress
 	for _, layer := range layers {
-		// A layer whose total is unknown cannot contribute to a truthful
-		// aggregate denominator yet.
 		if layer.total == 0 {
 			continue
 		}
@@ -192,8 +177,6 @@ func observePullProgress(layers map[string]pullLayerProgress, message jsonstream
 		return PullProgress{}, false
 	}
 	if progress.Completed > progress.Total {
-		// This should be impossible after validating each layer. Keep the
-		// invariant explicit in case the representation changes later.
 		return PullProgress{}, false
 	}
 	return progress, true
@@ -215,8 +198,6 @@ func (e *SDKEngine) ContainersUsing(ctx context.Context, imageID string) ([]stri
 }
 
 func (e *SDKEngine) Remove(ctx context.Context, imageID string) error {
-	// Re-check immediately before Engine remove. Force and prune are explicitly
-	// false; Docker itself remains the final race-safe reference guard.
 	refs, err := e.ContainersUsing(ctx, imageID)
 	if err != nil {
 		return err
@@ -254,8 +235,6 @@ var (
 	ErrImageNotFound = errors.New("image was not found")
 )
 
-// EncodeRegistryCredentials builds Docker's transient RegistryAuth header.
-// The returned value must remain in the request's memory lifetime only.
 func EncodeRegistryCredentials(username, password string) (string, error) {
 	if len(username) == 0 || len(username) > 256 || len(password) == 0 || len(password) > 4096 {
 		return "", errors.New("registry credentials are invalid")

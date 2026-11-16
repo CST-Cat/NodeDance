@@ -1,4 +1,3 @@
-// Preserve license notices for the file-manager package and its dependency graph.
 const fs=require('node:fs'),path=require('node:path')
 const packages=new Map()
 function visit(directory){

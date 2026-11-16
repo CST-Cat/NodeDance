@@ -25,8 +25,6 @@ const groups: Group[] = [
   { id: "collector", accepts: prefix("agent.") },
 ];
 
-// Use the very same square card, heading and parameter rows as MetricsPanel.
-// Per-core readings reuse the same gauge inside the shared square card.
 export default function DiagnosticCards({ view, definitions, entityDefinitions, online, elapsedMs, collectorDetails }: Props) {
   useSignals();
   const host = view.metrics.host;

@@ -23,7 +23,6 @@ type terminalIO struct {
 	io.Writer
 }
 
-// safeScreen keeps server data and error text from injecting terminal escapes.
 func safeScreen(s string) string {
 	return strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) && r != '\n' && r != '\t' {
@@ -176,8 +175,6 @@ func runTUI(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reade
 			if err == nil {
 				var tokenInput io.Reader = stdin
 				if (o.Name == "client.update" && updateUsesRemote(localArgs, lookup)) || o.Name == "client.batch" {
-					// Explicit remote workflows reuse this TUI's authenticated connection.
-					// A plain local update never inherits a remote server or session.
 					for _, item := range []struct{ name, value string }{
 						{"server", *connection.server}, {"origin", *connection.origin},
 						{"state-dir", *connection.stateDir}, {"ca-file", *connection.caFile},
@@ -214,8 +211,6 @@ func runTUI(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reade
 						localArgs = append(localArgs, "--token-stdin")
 					}
 				}
-				// Local processes use the same CLI dispatch. Restore cooked mode while
-				// they run so Ctrl-C and service output behave normally.
 				term.Restore(int(file.Fd()), state)
 				err = runControl(ctx, o.Name, localArgs, lookup, tokenInput, stdout, stderr, version)
 				_, rawErr := term.MakeRaw(int(file.Fd()))
@@ -289,9 +284,6 @@ func runTUI(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reade
 					return e
 				}
 				if value == "-" {
-					// The TUI owns the terminal in raw mode, so stdin is not
-					// readable here; say so instead of silently sending an
-					// empty body.
 					write("- (stdin) is not available in the TUI; use @private-file or paste the JSON body\n")
 					if _, err := prompt("Enter to return", false); err != nil {
 						return err
@@ -502,7 +494,6 @@ func runTUI(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reade
 			}
 		observationDone:
 			raw, _ := json.MarshalIndent(result, "", "  ")
-			// Paginate large results so history and inventory remain inspectable.
 			lines := strings.Split(string(raw), "\n")
 			for i := 0; i < len(lines); i += 18 {
 				write(strings.Join(lines[i:min(len(lines), i+18)], "\n") + "\n")
@@ -517,7 +508,6 @@ func runTUI(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reade
 					}
 				}
 			}
-			// Never echo a request body: it can contain passwords and private keys.
 		}
 		cancel()
 		if closeUpload != nil {

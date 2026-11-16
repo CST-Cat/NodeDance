@@ -12,9 +12,6 @@ type EnvelopeWriter interface {
 	Send(context.Context, protocol.Envelope) error
 }
 
-// Bridge handles read-only inventory and config preflight requests. Compose
-// file writes and project lifecycle mutations use the shared Core Task and
-// Agent TaskJournal path.
 type Bridge struct{ manager *Manager }
 
 func NewBridge(manager *Manager) (*Bridge, error) {

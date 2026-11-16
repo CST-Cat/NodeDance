@@ -29,8 +29,6 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Path != "/ws/v1/dashboard" {
-		// The Agent channel cannot inherit browser-session
-		// authority. Unknown browser channels stay unavailable as well.
 		http.NotFound(w, r)
 		return
 	}

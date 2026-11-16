@@ -1,5 +1,3 @@
-// Run after make build. Temporary real Core and protocol-only Agent fixtures;
-// no real Agent process, host commands, filesystem fixtures or Docker controls.
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=require('node:net')
 const {spawn}=require('node:child_process'),{chromium}=require('playwright')
 const root=path.resolve(__dirname,'../..'),directory=fs.mkdtempSync(path.join(os.tmpdir(),'nodedance-overview-scroll-')),artifacts=path.join(root,'.build/overview-scroll-audit')

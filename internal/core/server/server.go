@@ -354,8 +354,6 @@ func New(version string, options Options) (*Server, error) {
 		return nil, fmt.Errorf("clean expired metric history: %w", err)
 	}
 	if _, err := coreretention.Cleanup(context.Background(), store.DB, options.Now(), options.NonMetricHistoryRetention); err != nil {
-		// This transaction is all-or-nothing. Let the Core remain available and
-		// report maintenance failures explicitly instead of claiming a purge.
 		log.Printf("NodeDance non-metric history retention cleanup failed: %v", err)
 	}
 	if err := s.agents.MarkAllOffline(context.Background()); err != nil {
@@ -458,9 +456,6 @@ func New(version string, options Options) (*Server, error) {
 	return s, nil
 }
 
-// runBackgroundWorker contains a background loop failure: a panic in one worker
-// must not crash the whole Core process, and each loop owns exactly one
-// agentWait count that this wrapper releases.
 func (s *Server) runBackgroundWorker(name string, loop func()) {
 	defer s.agentWait.Done()
 	defer func() {
@@ -534,15 +529,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	operation, known := control.MatchRoute(r.Method, r.URL.Path)
-	// Bound rejected bodies too: net/http may drain unread request content.
 	if r.Body != nil && r.ContentLength != 0 {
 		duration := s.jsonReadTimeout
 		if known && (operation.Transport == "upload" || operation.Transport == "multipart") {
 			duration = s.transferReadTimeout
 		}
 		_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(duration))
-		// net/http resets the deadline at the next request. Keeping it prevents
-		// a slow rejected or timed-out body being drained indefinitely.
 	}
 	if r.URL.Path != "/api/v1/health" {
 		select {
@@ -716,9 +708,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, "/api/") {
-		// The node dashboard polls these two read-only telemetry endpoints in
-		// the background. They still require a live session, but polling must
-		// not keep an otherwise idle browser session alive indefinitely.
 		current, ok := s.authenticateRequest(w, r, !isMetricsTelemetryRead(r))
 		if !ok {
 			http.Error(w, "authentication required", http.StatusUnauthorized)
@@ -799,8 +788,6 @@ func (s *Server) dispatchDueServiceProbes(ctx context.Context) error {
 	for _, candidate := range due {
 		connection := s.agentConnectionForNode(candidate.NodeID)
 		if connection == nil {
-			// Do not claim an executable run for an offline Agent. Persist the
-			// state transition once and defer the next check by the probe interval.
 			if err := s.probes.MarkNodeUnknown(ctx, candidate.NodeID, now); err != nil {
 				return err
 			}
@@ -927,10 +914,6 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	_ = json.NewEncoder(w).Encode(value)
 }
 
-// assetHandler serves the embedded Web build with class-based caching and
-// precompressed transfer: content-hashed bundles are immutable, every other
-// file revalidates through a content-hash ETag, and .gz siblings ship to
-// clients that accept gzip.
 type assetHandler struct {
 	files  http.Handler
 	source fs.FS
@@ -980,7 +963,6 @@ func (h *assetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if compressed, err := h.source.Open(name + ".gz"); err == nil {
 			if seeker, ok := compressed.(io.ReadSeeker); ok {
 				w.Header().Set("Content-Encoding", "gzip")
-				// Range selects bytes of the decoded representation; serve it whole.
 				trimmed := r.Clone(r.Context())
 				trimmed.Header.Del("Range")
 				http.ServeContent(w, trimmed, name, time.Time{}, seeker)

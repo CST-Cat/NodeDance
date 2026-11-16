@@ -1,8 +1,6 @@
 import { useRef, type CSSProperties, type ReactNode } from "react";
 import "./UiSegments.css";
 
-// A shared, rectangular choice group. No IDs or layout animation state leak
-// between the many independent VPS controls on the same page.
 export default function UiSegments<T extends string>({ value, options, onChange, label, className = "" }: {
   value: T; options: { value: T; label: ReactNode }[];
   onChange: (value: T) => void; label: string; className?: string;

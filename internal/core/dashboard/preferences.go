@@ -1,6 +1,3 @@
-// Package dashboard stores administrator display preferences independently of
-// Docker Engine state. Keys for Compose services and standalone containers are
-// supplied by the Core from their stable resource identity.
 package dashboard
 
 import (
@@ -31,10 +28,6 @@ func ContainerIdentity(containerID string) (string, bool) {
 	return "container:" + containerID, true
 }
 
-// ComposeServiceIdentity is independent of replica/container names and IDs.
-// Project directory and config-file labels disambiguate two projects that use
-// the same project/service names on one node; the owning node is always part
-// of the hash input so preferences can never bleed across nodes.
 func ComposeServiceIdentity(nodeID, project, workingDir, configFiles, service string) (string, bool) {
 	if !validNodeID(nodeID) || strings.TrimSpace(project) != project || project == "" || len(project) > 256 ||
 		strings.TrimSpace(service) != service || service == "" || len(service) > 256 ||
@@ -321,7 +314,6 @@ func validSettings(s Settings) bool {
 }
 
 func encodeFields(fields []string) string {
-	// The supported field names contain no quotes or delimiters.
 	var b strings.Builder
 	b.WriteByte('[')
 	for i, field := range fields {

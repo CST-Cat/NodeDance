@@ -23,7 +23,6 @@ export { Tabs, TabsList, TabsTrigger } from "@/components/arc/tabs/tabs";
 import "./ManagementUI.css";
 
 const PortalContainer = createContext<HTMLElement | null>(null);
-/** A product theme/portal boundary around the installed shadcn registry components. */
 export function ManagementPage({
   className,
   children,
@@ -57,7 +56,6 @@ export function Select(props: SelectProps) {
   );
 }
 
-/** Preserve the current boolean/array selection model without synthesizing DOM events. */
 export function checkboxProps(
   value: any,
   set: (value: any) => void,
@@ -84,7 +82,6 @@ function plainText(value: ReactNode): string {
     )
     .join("");
 }
-/** Render-only option composition; request validation remains in Core. */
 export function selectOptions(children: ReactNode): SelectProps["options"] {
   return Children.toArray(children).flatMap((child) => {
     if (

@@ -1,5 +1,3 @@
-// Package observe collects bounded diagnostic measurements. Unsupported sources,
-// failed reads and uninitialised/reset counters remain distinct unknown states.
 package observe
 
 import (

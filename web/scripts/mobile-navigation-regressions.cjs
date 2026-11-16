@@ -9,7 +9,7 @@ module.exports=async function({page,base,artifacts}){
  for(const [theme,width] of [['light',1440],['dark',390]]){
   await page.setViewportSize({width,height:900})
   await page.goto(base+'/#/nodes')
-  await page.reload() // Each layout must exercise a fresh document, not a hash navigation.
+  await page.reload()
   const sidebar=page.locator('#workspace-navigation'),toggle=page.locator('.navigation-toggle')
   await sidebar.waitFor({state:'attached'})
   await page.waitForTimeout(500)
@@ -65,8 +65,6 @@ module.exports=async function({page,base,artifacts}){
   assert.ok(await toggle.evaluate(el=>el===document.activeElement))
   await sidebar.evaluate(el=>Promise.all(el.getAnimations().map(a=>a.finished)))
  }
- // A lower selected entry must not scroll either layer as focus moves during
- // reveal. Sample every frame while repeatedly reversing the live transition.
  for(const theme of ['light','dark'])for(const viewport of [{width:390,height:600},{width:700,height:480}]){
   await page.setViewportSize(viewport)
   await page.goto(base+'/#/settings');await page.reload()

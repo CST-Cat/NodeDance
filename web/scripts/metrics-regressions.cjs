@@ -1,4 +1,3 @@
-// Synthetic samples against the isolated Core contract; no real Agent or host.
 const assert=require('node:assert/strict'),path=require('node:path')
 module.exports=async function({page,base,node,artifacts,catalog}){
  module.exports.checkRecentHistory()

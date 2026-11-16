@@ -1,6 +1,3 @@
-// Package terminal owns short-lived, bounded interactive Agent terminals.
-// Browser traffic never becomes an arbitrary command: sessions select only a
-// fixed host shell or a fixed shell inside an exact Docker container ID.
 package terminal
 
 import (
@@ -204,9 +201,6 @@ func (m *Manager) readOutput(current *session) {
 		if count > 0 {
 			payload := append([]byte(nil), buffer[:count]...)
 			if emitErr := current.emit(protocol.TerminalFrame{StreamID: current.id, Action: protocol.TerminalActionOutput, Data: payload}); emitErr != nil {
-				// The lane keeps draining while the queue is saturated; report the
-				// session closed instead of letting the browser freeze on a dead
-				// stream.
 				m.close(current, true)
 				return
 			}
@@ -284,12 +278,6 @@ func (m *Manager) CloseAll() {
 	}
 }
 
-func (m *Manager) Count() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return len(m.sessions)
-}
-
 func (m *Manager) lookup(id string) *session {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -316,10 +304,6 @@ func (m *Manager) close(current *session, notify bool) {
 	})
 }
 
-// notifyClosed delivers the closed frame through the bounded terminal lane.
-// Backpressure means the writer is healthy but saturated and keeps draining,
-// so the frame may briefly wait for space; other failures mean the writer is
-// gone and no retry can help.
 func (m *Manager) notifyClosed(current *session) {
 	frame := protocol.TerminalFrame{StreamID: current.id, Action: protocol.TerminalActionClosed}
 	for attempt := 0; attempt < 25; attempt++ {

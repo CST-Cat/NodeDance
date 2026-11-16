@@ -33,9 +33,6 @@ const (
 
 var streamRequestID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 
-// ContainerStreamOpen is sent only by Core after authorizing a browser
-// Session, node, and full container identity. Agent independently validates
-// every field before opening an Engine request.
 type ContainerStreamOpen struct {
 	Kind        string `json:"kind"`
 	ContainerID string `json:"containerId"`
@@ -100,9 +97,6 @@ type ContainerStreamError struct {
 	Code string `json:"code"`
 }
 
-// ValidateContainerStreamOpen rejects resource identifiers and options that
-// could broaden a read beyond the requested Docker resource or create an
-// unbounded historical response.
 func ValidateContainerStreamOpen(request ContainerStreamOpen) error {
 	if !IsFullContainerID(request.ContainerID) {
 		return errors.New("container stream requires the full container ID")

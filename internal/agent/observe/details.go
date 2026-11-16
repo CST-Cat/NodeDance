@@ -28,8 +28,6 @@ func (c *Collector) collectSlow(ctx context.Context, at time.Time, s protocol.Ob
 	return o
 }
 
-// Read comm directly: library name helpers may expand it from argv, which can
-// expose credentials and exceed the entity-name wire limit.
 func processName(id int32) (string, error) {
 	f, err := os.Open(filepath.Join(root(), strconv.FormatInt(int64(id), 10), "comm"))
 	if err != nil {
@@ -108,7 +106,6 @@ func (c *Collector) collectProcesses(ctx context.Context, at time.Time, limit in
 		}
 		entities = append(entities, protocol.DiagnosticEntity{Kind: "process", ID: identity, Name: name, Values: v})
 	}
-	// Union CPU, RSS and I/O rankings within the overall configured limit.
 	score := func(e protocol.DiagnosticEntity, k string) float64 {
 		if v := e.Values[k]; v.Status == protocol.MetricKnown && v.Value != nil {
 			return *v.Value

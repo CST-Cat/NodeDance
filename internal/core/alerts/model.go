@@ -1,6 +1,3 @@
-// Package alerts owns durable alert rules, lifecycle state and notification
-// delivery records. Evaluation inputs are supplied by Core using trusted,
-// current node/metric/Docker/probe state.
 package alerts
 
 import (

@@ -41,10 +41,6 @@ type SystemdInstallOptions struct {
 	commandRunner       func(context.Context, ...string) ([]byte, error)
 }
 
-// ValidateSystemdStatePath checks the Agent state directory and config without
-// following any existing symlink. It performs no filesystem mutations, so an
-// SSH installer can reject unsafe paths before preparing root-owned state or
-// replacing the installed binary.
 func ValidateSystemdStatePath(configPath string) error {
 	dirFD, missing, err := openSystemdStateDirectory(configPath, false)
 	if err != nil || missing {
@@ -61,21 +57,10 @@ func ValidateSystemdStatePath(configPath string) error {
 	return err
 }
 
-// PrepareSystemdStateForUser safely prepares the dedicated root Agent state
-// path. Directory and file ownership/mode changes are applied through
-// already-open, no-follow file descriptors.
-//
-// It returns true when a valid config already existed and was preserved.
 func PrepareSystemdStateForUser(serviceUser, configPath string) (bool, error) {
 	return prepareSystemdStateForUser(serviceUser, configPath, false)
 }
 
-// PrepareNewSystemdStateForUser safely creates the state directory only when
-// its final path component is absent. It is used by fresh installs that must
-// refuse to adopt an existing Agent state directory. It returns the device and
-// inode observed through the opened directory descriptor, so callers can
-// identify exactly the directory created even if the path is concurrently
-// replaced.
 func PrepareNewSystemdStateForUser(serviceUser, configPath string) (string, error) {
 	uid, gid, err := systemdServiceUIDGID(serviceUser)
 	if err != nil {
@@ -119,10 +104,6 @@ func systemdServiceUIDGID(serviceUser string) (int, int, error) {
 	return uid, gid, nil
 }
 
-func prepareSystemdState(configPath string, serviceUID, serviceGID int) (bool, error) {
-	return prepareSystemdStateWithRequirement(configPath, serviceUID, serviceGID, false)
-}
-
 func prepareSystemdStateWithRequirement(configPath string, serviceUID, serviceGID int, requireNew bool) (bool, error) {
 	exists, _, err := prepareSystemdStateDetailed(configPath, serviceUID, serviceGID, requireNew)
 	return exists, err
@@ -155,9 +136,6 @@ func prepareSystemdStateDetailed(configPath string, serviceUID, serviceGID int, 
 		return false, "", errors.New("Agent config already exists; refusing to adopt it")
 	}
 
-	// Validate and open the config before touching either path's metadata. In
-	// particular, a config symlink must not cause even the state directory to
-	// be chmod/chowned as a side effect of a rejected installation.
 	if err := setSystemdStateMetadata(dirFD, serviceUID, serviceGID, 0o700, "Agent state directory"); err != nil {
 		return false, "", err
 	}
@@ -885,10 +863,6 @@ func lookupIdentityFromConfig(ctx context.Context, config Config) (assignedIdent
 	return lookupIdentity(ctx, client, config, config.Credential)
 }
 
-// UninstallSystemd stops and removes only a unit that still matches a
-// NodeDance-managed root unit. It deliberately leaves the Agent
-// binary, service account, credentials, and journal in place for recovery or
-// later reinstall.
 func UninstallSystemd(ctx context.Context, unitDir string) error {
 	return uninstallSystemd(ctx, unitDir, nil, nil)
 }
@@ -1048,9 +1022,6 @@ func systemdQuote(value string) string {
 	return strings.ReplaceAll(quoted, "$", "$$")
 }
 
-// systemdQuoteUnitValue escapes unit specifiers without applying ExecStart's
-// dollar-variable escaping. Path-valued directives and Environment= treat a
-// dollar sign literally; doubling it here would point to a different path.
 func systemdQuoteUnitValue(value string) string {
 	return strings.ReplaceAll(strconv.Quote(value), "%", "%%")
 }
@@ -1077,10 +1048,6 @@ func validateSystemdServiceUID(username string, uid int) error {
 	return nil
 }
 
-// ValidateFileRoot applies the same path policy to foreground Agents and
-// systemd installations. The root must already exist and be a real directory;
-// rejecting symlinked path components keeps the path named by the service
-// allowlist identical to the directory opened by the Agent.
 func ValidateFileRoot(value, stateDir string) (string, error) {
 	if value == "" || !filepath.IsAbs(value) || len(value) > 4096 || strings.ContainsAny(value, "\x00\r\n") {
 		return "", errors.New("Agent file root must be an absolute existing directory")
@@ -1189,11 +1156,6 @@ func readPersistedSystemdFilePolicy(unitPath string) (root string, disabled, fou
 		return string(decoded), false, true, nil
 	}
 	return "", false, false, nil
-}
-
-func writeSystemdUnit(path, contents string) error {
-	_, err := writeSystemdUnitExpected(path, contents, "", "")
-	return err
 }
 
 func writeSystemdUnitExpected(path, contents, expectedState, expectedSHA256 string) (bool, error) {

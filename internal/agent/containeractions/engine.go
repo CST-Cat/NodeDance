@@ -14,8 +14,6 @@ import (
 	"github.com/moby/moby/client"
 )
 
-// SDKEngine is the real Docker Engine adapter. It permits only a local Unix
-// socket, negotiates the API version, and hard-codes safe remove flags.
 type SDKEngine struct {
 	client *client.Client
 }

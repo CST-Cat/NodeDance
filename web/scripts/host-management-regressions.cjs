@@ -41,8 +41,6 @@ module.exports=async function({page,context,base,node,headers,catalog}){
       }
       await page.setViewportSize({width:1440,height:1000})
     }
-    // Specialized batch forms reuse the shared execution intent after a lost
-    // response and reload. Only a completed submission starts a fresh intent.
     for(const [tab,name,route] of [['Batch scripts','commands.batch','**/api/v1/commands/batches'],['Multi-node probes','probes.batch','**/api/v1/probes/batch']]){
       const batchKeys=[]
       await page.route(route,async intercepted=>{

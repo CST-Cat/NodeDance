@@ -1,4 +1,3 @@
-// Run before the first paint; external script preserves the Core CSP.
 (() => {
   let preference = 'system';
   try {

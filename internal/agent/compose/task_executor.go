@@ -174,9 +174,6 @@ func (e *TaskExecutor) ReconcileCompose(ctx context.Context, taskID string, inte
 			return e.journal.Get(ctx, taskID)
 		}
 	}
-	// Project lifecycle commands remain unknown after an interrupted delivery.
-	// Inspecting current state alone cannot prove whether this task caused it, so
-	// never replay Compose mutations during reconciliation.
 	return task, nil
 }
 

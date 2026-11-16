@@ -1,7 +1,3 @@
-// Package containeractions executes the allowlisted Docker container lifecycle
-// operations. It owns no transport and never accepts a client-provided Compose
-// classification. Every mutation is preceded by a durable Agent journal begin
-// and followed by a fresh Docker inspect.
 package containeractions
 
 import (
@@ -53,10 +49,6 @@ var (
 	defaultVerificationLimit = 5 * time.Second
 )
 
-// Request is a typed, non-secret action. DeleteConfirmationID is an ephemeral
-// confirmation binding; it must equal ContainerID and is deliberately omitted
-// from the persisted canonical intent because Core's digest contract contains
-// only action, container_id, new_name, and delete_confirmed.
 type Request struct {
 	TaskID               string
 	NodeID               string
@@ -72,9 +64,6 @@ type Request struct {
 	ConfirmationID       string
 }
 
-// ContainerCreateEngine is an optional capability implemented by the shared
-// Docker SDK adapter. It stays on the same Docker client and task executor as
-// the existing lifecycle operations.
 type ContainerCreateEngine interface {
 	CreateContainer(context.Context, protocol.ContainerCreateSpec, string, string) (Container, error)
 	FindCreatedContainers(context.Context, string, string) ([]Container, error)
@@ -95,9 +84,6 @@ type RebuildRequest struct {
 	ConfirmationID string
 }
 
-// Container is a small sanitized projection of the Docker Inspect response.
-// ComposeManaged is derived only inside the Docker SDK adapter from real
-// Inspect labels; it is never accepted in Request.
 type Container struct {
 	ID             string
 	Name           string
@@ -112,9 +98,6 @@ type Container struct {
 	CreateDigest   string
 }
 
-// Engine contains only the lifecycle calls this component is allowed to make.
-// Remove has no options so implementations must keep force and volume removal
-// disabled.
 type Engine interface {
 	Inspect(context.Context, string) (Container, error)
 	Start(context.Context, string) error
@@ -126,9 +109,6 @@ type Engine interface {
 	Rename(context.Context, string, string) error
 }
 
-// Journal is the durable execution boundary provided by the existing Agent
-// task journal. Enqueue must persist the intent before BeginExecution; callers
-// must not invoke a Docker mutation unless BeginExecution succeeds.
 type Journal interface {
 	Enqueue(context.Context, taskstate.Identity) (taskjournal.EnqueueResult, error)
 	BeginExecution(context.Context, string) error
@@ -175,19 +155,6 @@ func New(engine Engine, journal Journal, options Options) (*Executor, error) {
 		verificationTimeout: options.VerificationTimeout, bootIDSource: options.BootIDSource, rebuilder: options.Rebuilder}, nil
 }
 
-// Execute accepts an idempotent safe intent, durably begins it, performs at
-// most one Docker mutation, then verifies actual Engine state. A running or
-// unknown journal entry is never replayed; unknown entries retain their claim
-// until a separate reconciliation flow resolves them.
-func (e *Executor) Execute(ctx context.Context, request Request) (taskjournal.Snapshot, error) {
-	return e.ExecuteObserved(ctx, request, nil)
-}
-
-// ExecuteObserved is Execute with a notification hook for the durable running
-// transition. The hook runs only after BeginExecution has committed and a
-// bounded journal read confirms the persisted running state and evidence. It
-// must be quick and nonblocking; taskrunner uses it only to enqueue a report
-// wake-up hint.
 func (e *Executor) ExecuteObserved(ctx context.Context, request Request, onRunning func(taskjournal.Snapshot)) (taskjournal.Snapshot, error) {
 	if request.Action == ActionRebuild || request.Action == ActionRebuildCleanup {
 		if e.rebuilder == nil {
@@ -217,8 +184,6 @@ func (e *Executor) ExecuteObserved(ctx context.Context, request Request, onRunni
 	case taskstate.Running:
 		return task, ErrTaskInProgress
 	case taskstate.Queued:
-		// Queued means no executor boundary was crossed. Competing duplicate
-		// callers race on this SQLite transition; only its winner may proceed.
 	default:
 		return task, ErrInvalidRequest
 	}
@@ -240,10 +205,6 @@ func (e *Executor) ExecuteObserved(ctx context.Context, request Request, onRunni
 		}
 		return latest, fmt.Errorf("begin container action: %w", err)
 	}
-	// BeginExecution returning nil means its SQLite commit succeeded. Confirm
-	// the durable row before notifying Core or crossing into any Engine call.
-	// If the row cannot be read or does not carry the committed running proof,
-	// keep the outcome conservative and do not mutate Docker.
 	runningCtx, runningCancel := context.WithTimeout(context.WithoutCancel(ctx), e.verificationTimeout)
 	running, runningErr := e.journal.Get(runningCtx, task.TaskID)
 	runningCancel()
@@ -309,7 +270,6 @@ func (e *Executor) ExecuteObserved(ctx context.Context, request Request, onRunni
 	baselineErr := e.journal.PrepareMutation(baselineCtx, task.TaskID, baseline)
 	baselineCancel()
 	if baselineErr != nil {
-		// A failed/ambiguous SQLite commit does not authorize a Docker write.
 		return e.markUnknown(ctx, task.TaskID, errors.Join(ErrBaselinePersistence, baselineErr))
 	}
 
@@ -340,8 +300,6 @@ func (e *Executor) ExecuteObserved(ctx context.Context, request Request, onRunni
 		}
 		return e.finishSucceeded(context.WithoutCancel(ctx), task.TaskID, observedState(after), revision)
 	}
-	// Do not persist the SDK's free-form error. A request error and a missing
-	// postcondition are both uncertain: the call may have reached the daemon.
 	cause := ErrOutcomeUnknown
 	if mutationErr != nil {
 		cause = ErrOperationFailed
@@ -349,11 +307,6 @@ func (e *Executor) ExecuteObserved(ctx context.Context, request Request, onRunni
 	return e.markUnknown(ctx, task.TaskID, cause)
 }
 
-// Reconcile confirms only a restart postcondition from a verified durable
-// baseline on the same host boot. It never calls the Docker mutation API. A
-// changed StartedAt/RestartCount proves a post-baseline restart-like state
-// change, not that this process issued exactly one restart request; an external
-// actor may have caused the same observation.
 func (e *Executor) Reconcile(ctx context.Context, taskID string) (taskjournal.Snapshot, error) {
 	if ctx == nil || !validText(taskID, taskstate.MaxIdentityBytes) {
 		return taskjournal.Snapshot{}, ErrInvalidRequest
@@ -479,9 +432,6 @@ func (e *Executor) executeContainerCreate(ctx context.Context, request Request) 
 	if err != nil || digest != request.CreateSHA256 {
 		return e.finishFailed(ctx, request.TaskID, "invalid_create_spec")
 	}
-	// Query Docker by the task's private labels before issuing a write. This
-	// protects the one-time create from duplicate delivery and supports recovery
-	// when the daemon accepted a request but the response was lost.
 	findCtx, findCancel := context.WithTimeout(ctx, e.verificationTimeout)
 	existing, findErr := engine.FindCreatedContainers(findCtx, request.TaskID, digest)
 	findCancel()
@@ -514,9 +464,6 @@ func (e *Executor) executeContainerCreate(ctx context.Context, request Request) 
 	if createErr == nil && validCreatedContainer(created, request.TaskID, digest) {
 		return e.finishCreateSucceeded(context.WithoutCancel(ctx), request.TaskID, created.ID)
 	}
-	// A fresh labeled inventory decides whether a create call with an uncertain
-	// response took effect. A missing payload or rejected request cannot be
-	// reported as success, and ambiguous results stay unknown for review.
 	verifyCtx, verifyCancel := context.WithTimeout(context.WithoutCancel(ctx), e.verificationTimeout)
 	observed, verifyErr := engine.FindCreatedContainers(verifyCtx, request.TaskID, digest)
 	verifyCancel()

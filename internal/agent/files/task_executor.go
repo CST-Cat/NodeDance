@@ -46,9 +46,6 @@ type pendingUpload struct {
 	transport   string
 }
 
-// TaskExecutor performs filesystem mutations through the Agent's existing
-// durable task journal. The pending upload map is a connection rendezvous for
-// one streaming body; it is not persistent task state.
 type TaskExecutor struct {
 	service       *Service
 	journal       fileTaskJournal
@@ -234,9 +231,6 @@ func (e *TaskExecutor) prepareUpload(ctx context.Context, taskID string, spec pr
 	if err != nil {
 		return err
 	}
-	// Keep the staged file on the executor while the Core streams bytes. A
-	// failed or revoked transfer closes the reader and the deferred Abort
-	// removes this exact random sibling temporary path.
 	uploadCtx, cancel := context.WithCancelCause(ctx)
 	pending := &pendingUpload{spec: spec, reader: make(chan *io.PipeReader, 1), upload: upload, ctx: uploadCtx, cancel: cancel}
 	e.mu.Lock()
@@ -491,8 +485,6 @@ func (e *TaskExecutor) finishCanceled(ctx context.Context, taskID string) (taskj
 }
 
 func (e *TaskExecutor) ReconcileFile(ctx context.Context, taskID string, intent protocol.TaskIntent) (taskjournal.Snapshot, error) {
-	// No file mutation is replayed after a process interruption. The previous
-	// durable result remains unknown until an administrator starts a new task.
 	task, err := e.journal.Get(ctx, taskID)
 	if err != nil || task.Status != taskstate.Unknown {
 		return task, err

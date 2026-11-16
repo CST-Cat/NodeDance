@@ -283,8 +283,6 @@ func (c *Collector) filterInterface(name string, included bool, reason string) (
 	return included, reason
 }
 
-// Traffic accounting persists every accepted sample. Counter identity includes
-// boot ID and ifindex; reset/recreated links never create a huge false delta.
 type trafficCounter struct {
 	RX       uint64 `json:"rx"`
 	TX       uint64 `json:"tx"`
@@ -317,7 +315,6 @@ func (h *hostCollector) collectTraffic(ctx context.Context, at time.Time, s prot
 		h.traffic = loaded
 		h.initialized = true
 	}
-	// Keep the last accepted baseline intact until the replacement is durable.
 	previous := h.traffic.Counters
 	period := BillingPeriod(at, s.BillingDay)
 	v := h.traffic.Value
@@ -403,7 +400,6 @@ func (h *hostCollector) collectTraffic(ctx context.Context, at time.Time, s prot
 	return m
 }
 
-// Filter before statfs: excluded network mounts cannot block an included scan.
 type configuredDiskSource struct {
 	collectorSource
 	settings func() protocol.AgentSettings

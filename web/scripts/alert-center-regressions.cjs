@@ -3,8 +3,6 @@ const {selectValue}=require('./arc-controls.cjs')
 const {setBrowserLanguage}=require('./browser-language.cjs')
 module.exports=async function({page,context,base,node,headers,catalog}){
     let response;
-    // A successful HTTP status without the required JSON payload must become a
-    // useful error, and Refresh must retry the metric catalog as well as lists.
     let metricReply='empty',metricReads=0
     await page.route('**/api/v1/metrics/catalog',route=>{
       metricReads++

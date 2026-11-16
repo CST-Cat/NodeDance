@@ -1,7 +1,5 @@
 const {fillExpanded}=require('./expanded-textarea.cjs')
 const {closeNavigation,selectNodeSection}=require('./sidebar-navigation.cjs')
-// Real browser presentation regressions against the isolated interface Core.
-// Compose responses are protocol fixtures; no remote mutation is executed.
 const assert=require('node:assert/strict'),path=require('node:path')
 module.exports=async function({page,context,base,node,headers,artifacts,catalog}){
  async function layouts(name){
@@ -133,8 +131,6 @@ module.exports=async function({page,context,base,node,headers,artifacts,catalog}
  await page.getByTestId('service-probes').waitFor()
  await page.reload();await page.getByTestId('service-probes').waitFor()
  assert.ok(page.url().includes('section=probes'),'Dedicated section survives reload')
- // Existing Tailscale is simulated at the API boundary; no network setup,
- // SSH connection or real deployment is performed by this browser fixture.
  const peers=['peer-a','peer-b'].map(identity=>({identity,name:identity,os:'linux',class:'linux',online:true,ips:['100.64.0.1'],managed:false}))
  await page.route('**/api/v1/discovery/tailscale',route=>route.fulfill({json:{peers,discoveredAt:new Date().toISOString()}}))
  await page.route('**/api/v1/discovery/deployments',route=>route.request().method()==='POST'?route.fulfill({json:{taskId:'browser-deployment',peerIdentity:'peer-b',peerName:'peer-b',status:'queued',phase:'accepted',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}}):route.fulfill({json:{tasks:[]}}))

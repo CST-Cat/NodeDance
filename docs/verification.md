@@ -7,9 +7,8 @@ Run the smallest checks relevant to the change. The commands below describe main
 ## Build and shared contract / 构建与契约
 
 - `make build` checks and builds Web before embedding it in the Core and building both Go binaries. Do not independently build Go with stale Web assets.
-- `make check` runs frontend checks, Python tests, Go tests and generated interface coverage. Root-only tests need root; integration-specific requirements are described by the tests.
+- `make check` runs frontend checks, `go vet ./...` and generated interface coverage. Tests are e2e only and live in `web/scripts/`.
 - `python3 scripts/interface-coverage.py --check` compares the generated interface table with the shared catalogue. Discover actual request schemas from the connected Core; do not freeze operation counts.
-- `go test -race ./internal/control ./internal/core/cli` checks the shared client/executor, precision, upload and terminal workflows. Run relevant package tests for the code changed.
 
 ## Browser behavior / 浏览器行为
 
@@ -31,7 +30,7 @@ Functional assertions, geometry, optional screenshots, manual visual review, dev
 
 ## Root and Docker execution / root 与 Docker 执行
 
-Root command, terminal, file and update tests use isolated state and retain credentials/path protections. The Docker integration entrypoint is `TEST_CORE_BINARY=.build/nodedance python3 scripts/test-docker.py`; see [Docker](docker.md) for prerequisites and scope. Local image tests do not establish that a newly published release downloads successfully. Transfer tests additionally require their documented Landlock support; [file transfers](file-transfers.md) distinguishes local/virtual NAT tests from real-provider verification.
+Root command, terminal, file and update tests use isolated state and retain credentials/path protections. The Docker integration entrypoint is `TEST_CORE_BINARY=.build/nodedance python3 web/scripts/test-docker.py`; see [Docker](docker.md) for prerequisites and scope. Local image tests do not establish that a newly published release downloads successfully. Transfer tests additionally require their documented Landlock support; [file transfers](file-transfers.md) distinguishes local/virtual NAT tests from real-provider verification.
 
 ## Capacity / 容量
 

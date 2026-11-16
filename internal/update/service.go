@@ -10,7 +10,6 @@ import (
 
 func (m *Manager) Handle(ctx context.Context, rpc RPC) Response {
 	if rpc.Action == "tailscale-peers" {
-		// This fixed read never accepts a command, path, target node or update options.
 		if rpc.Request != (Request{Component: "core"}) || rpc.IdempotencyKey != "" {
 			return Response{Status: 400, Error: "host discovery requires only component core"}
 		}

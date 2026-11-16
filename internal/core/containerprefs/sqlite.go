@@ -1,5 +1,3 @@
-// Package containerprefs moves persistent display preferences when a rebuild
-// replaces a container ID. Repeated Agent task reports make the move idempotent.
 package containerprefs
 
 import (
@@ -20,9 +18,6 @@ type preferences struct {
 	Order                         int
 }
 
-// SQLiteMigrator moves standalone-container display preferences in the
-// dashboard_preferences table. The identity key includes both the node ID
-// and the full Docker container ID, so preferences cannot cross node bounds.
 type SQLiteMigrator struct {
 	DB *sql.DB
 }
@@ -55,8 +50,6 @@ func (m *SQLiteMigrator) MigrateContainer(ctx context.Context, nodeID, fromID, t
 		return fmt.Errorf("read old container preference: %w", err)
 	}
 	if !hasOld {
-		// No source preference means there is nothing to move. This also makes
-		// replay after a prior successful identity move a no-op.
 		return tx.Commit()
 	}
 
@@ -68,8 +61,6 @@ func (m *SQLiteMigrator) MigrateContainer(ctx context.Context, nodeID, fromID, t
 		if newValue != oldValue {
 			return ErrIdentityConflict
 		}
-		// Equal preferences on both identities can be coalesced without losing
-		// administrator changes. Conflicting values above keep both rows intact.
 		if _, err := tx.ExecContext(ctx, `DELETE FROM dashboard_preferences
 			WHERE node_id=? AND target_kind='container' AND identity_key=?`, nodeID, fromKey); err != nil {
 			return fmt.Errorf("remove migrated container preference source: %w", err)

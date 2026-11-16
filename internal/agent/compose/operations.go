@@ -54,9 +54,6 @@ func (e *deploymentResultError) Error() string { return "Compose deployment did 
 
 type ProjectConfigSnapshot struct{ Files [][]byte }
 
-// CreateProject stages a new config without replacing any existing path,
-// validates it with Docker Compose, commits it atomically, and verifies the
-// resulting project through Docker Engine. Rollback never removes volumes.
 func (m *Manager) CreateProject(ctx context.Context, ref protocol.ComposeProjectRef, taskID string, content []byte, digest string) ([]agentdocker.Container, error) {
 	m.createMu.Lock()
 	defer m.createMu.Unlock()
@@ -308,9 +305,6 @@ func (m *Manager) CaptureProjectConfig(ctx context.Context, ref protocol.Compose
 	return snapshot, nil
 }
 
-// restoreProjectConfig replaces registered source files only when they still
-// match the exact contents observed immediately before deployment. This avoids
-// overwriting a concurrent operator edit while recovering an interrupted up.
 func (m *Manager) restoreProjectConfig(ctx context.Context, ref protocol.ComposeProjectRef, prior, attempted ProjectConfigSnapshot) error {
 	if len(prior.Files) != len(ref.ConfigFiles) || len(attempted.Files) != len(ref.ConfigFiles) || protocol.ValidateComposeProjectRef(ref) != nil {
 		return ErrConfigUnsafe
@@ -490,9 +484,6 @@ func (m *Manager) ValidateConfig(ctx context.Context, ref protocol.ComposeProjec
 	return nil
 }
 
-// SaveConfig validates a same-directory candidate before an atomic replacement.
-// committed is true once rename has replaced the original file, even if a
-// later durability check fails and the task must be marked unknown.
 func (m *Manager) SaveConfig(ctx context.Context, ref protocol.ComposeProjectRef, index int, baseSHA256, content string) (committed bool, err error) {
 	if len(content) > protocol.MaxComposeFileBytes {
 		return false, ErrConfigInvalid
@@ -520,9 +511,6 @@ func (m *Manager) SaveConfig(ctx context.Context, ref protocol.ComposeProjectRef
 	if err := m.runCompose(ctx, ref, map[int]string{index: temporary}, "config", "--quiet"); err != nil {
 		return false, ErrConfigInvalid
 	}
-	// Compose validation may take time. Re-read the target immediately before
-	// replacement so an editor or external process cannot be silently clobbered
-	// during that interval.
 	latest, err := readBoundedFile(path, protocol.MaxComposeFileBytes)
 	if err != nil {
 		return false, ErrConfigUnsafe
@@ -624,9 +612,6 @@ func (m *Manager) ExecuteProject(ctx context.Context, ref protocol.ComposeProjec
 		commandErr = m.runCompose(ctx, ref, nil, args...)
 	}
 	if commandErr != nil {
-		// A failed Compose command can leave some old services running while the
-		// requested deployment never took effect. Never infer success from that
-		// stale postcondition alone.
 		return "unknown", ErrOperationUncertain
 	}
 	after, err := m.waitProjectState(ctx, ref, expected)
@@ -731,9 +716,6 @@ func (m *Manager) recoverDeployment(ctx context.Context, ref protocol.ComposePro
 	if err := m.assertProjectNameOwned(ctx, ref); err != nil {
 		return "unknown", &deploymentResultError{state: "recovery_required", code: "project_identity_conflict", unknown: true}
 	}
-	// A partial `up` can leave task-created containers occupying ports needed by
-	// the baseline. The exact task marker and canonical source ref prove ownership;
-	// creation time is only a secondary consistency check.
 	if err := m.removeTaskCreatedProjectInstances(ctx, ref, before, started, taskID); err != nil {
 		return "unknown", &deploymentResultError{state: "recovery_required", code: "unexpected_project_containers", unknown: true}
 	}
@@ -1234,10 +1216,6 @@ func (m *Manager) requireLiveProject(ctx context.Context, ref protocol.ComposePr
 			return ErrConfigUnsafe
 		}
 	}
-	// Core supplies only a node-scoped project ref retrieved from its Compose
-	// registry. Docker labels are useful inventory, but disappear after an
-	// external `docker compose down`; the canonical registered source remains
-	// sufficient to validate and recreate that project.
 	if err := m.assertProjectNameOwned(ctx, ref); err != nil {
 		return err
 	}
@@ -1344,8 +1322,6 @@ func (m *Manager) runComposeWithTask(ctx context.Context, ref protocol.ComposePr
 	for _, labels := range services {
 		labels[agentdocker.ComposeTaskOverrideLabel] = override.path
 	}
-	// The override's own path is part of the ownership proof, so rewrite and
-	// fsync it only after the random path has been allocated.
 	if err := override.write(services); err != nil {
 		_ = override.remove()
 		return ErrConfigUnsafe

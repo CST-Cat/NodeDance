@@ -9,15 +9,10 @@ import (
 )
 
 const (
-	// TypeMetrics is carried in an Envelope whose generation is assigned by
-	// Core and whose sequence is monotonic for metrics messages only.
 	TypeMetrics = "metrics"
 
-	// CapabilityMetrics is negotiated at connection setup before Core accepts
-	// TypeMetrics frames from an Agent.
 	CapabilityMetrics = "agent.metrics.v2"
 
-	// MaxMetricsPayloadBytes matches the Core Agent payload decoder bound.
 	MaxMetricsPayloadBytes = 64 << 10
 	MaxMetricsInterfaces   = 256
 	MaxMetricsMounts       = 256
@@ -33,8 +28,6 @@ const (
 	MetricStale   MetricStatus = "stale"
 )
 
-// Metric preserves absence as an explicit state. A missing or failed read is
-// never represented by a zero-valued Value.
 type Metric[T any] struct {
 	Status          MetricStatus `json:"status"`
 	Value           *T           `json:"value,omitempty"`
@@ -126,8 +119,6 @@ type Uptime struct {
 	BootTimeUnix *uint64 `json:"bootTimeUnix,omitempty"`
 }
 
-// MarshalMetricsSnapshot validates and bounds the payload before an Agent puts
-// it in an Envelope. Envelope generation and sequence are supplied separately.
 func MarshalMetricsSnapshot(snapshot MetricsSnapshot) ([]byte, error) {
 	if err := ValidateAgentMetricsSnapshot(snapshot); err != nil {
 		return nil, err
@@ -142,13 +133,10 @@ func MarshalMetricsSnapshot(snapshot MetricsSnapshot) ([]byte, error) {
 	return data, nil
 }
 
-// ValidateAgentMetricsSnapshot accepts known/unknown/error measurements from
-// an Agent. Stale is derived by Core using its own receive time and node lease.
 func ValidateAgentMetricsSnapshot(snapshot MetricsSnapshot) error {
 	return validateMetricsSnapshot(snapshot, false)
 }
 
-// ValidateMetricsSnapshot also accepts Core-derived stale values for API views.
 func ValidateMetricsSnapshot(snapshot MetricsSnapshot) error {
 	return validateMetricsSnapshot(snapshot, true)
 }

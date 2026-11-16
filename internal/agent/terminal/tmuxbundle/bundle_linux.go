@@ -1,7 +1,5 @@
 //go:build linux
 
-// Package tmuxbundle supplies the complete upstream static tmux executable.
-// Assets are embedded in each architecture's Agent, including dependency notices.
 package tmuxbundle
 
 import (
@@ -24,8 +22,6 @@ const Version = "3.7c"
 //go:embed assets/terminfo licenses
 var support embed.FS
 
-// Install creates an isolated, root-only runtime workspace. No system tmux or
-// user configuration is modified. The caller owns cleanup after killing servers.
 func Install(stateDirectory string) (directory string, err error) {
 	if os.Geteuid() != 0 {
 		return "", errors.New("Agent terminal requires root")

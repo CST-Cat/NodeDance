@@ -31,7 +31,7 @@ To run the isolated Agent Docker integration against a locally built native Core
 ```sh
 docker build -f deploy/docker/Dockerfile.agent -t nodedance-agent:docker-test .
 docker compose -f deploy/docker/compose.agent.yml config -q
-TEST_CORE_BINARY=.build/nodedance python3 scripts/test-docker.py
+TEST_CORE_BINARY=.build/nodedance python3 web/scripts/test-docker.py
 ```
 
 The integration uses a temporary Core data directory, one temporary Agent container, and disposable host fixtures. It checks protected state, enrollment, root execution, host metrics and files, path protections, and reconnect behavior.

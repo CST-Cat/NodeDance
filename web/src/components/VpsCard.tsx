@@ -61,7 +61,6 @@ export default function VpsCard(input: Props) {
       async function openDockerDetails() {
         dockerDialogOpen.value = true;
         await afterRender();
-        // Focus the dialog's close affordance (shared header X).
         document
           .querySelector<HTMLButtonElement>(".vps-docker-dialog .ui-dialog-close")
           ?.focus({ preventScroll: true });
@@ -105,8 +104,6 @@ export default function VpsCard(input: Props) {
           return "";
         return `ssh -p ${port} ${user}@${host}`;
       });
-      // Discovery/unavailable messages retain their existing anchored hint;
-      // completed copies use the shared inline feedback.
       const copied = clipboardFeedback();
       const sshFeedback = cell("");
       const sshFeedbackKind = cell<"info" | "error">("info");
@@ -135,7 +132,6 @@ export default function VpsCard(input: Props) {
           clearTimeout(sshFeedbackTimer);
           sshFeedbackTimer = undefined;
         }
-        // Stay invisible during measurement so it never flashes unanchored.
         sshFeedbackStyle.value = { visibility: "hidden" };
         sshFeedbackTimer = setTimeout(() => {
           sshFeedbackTimer = undefined;
@@ -178,8 +174,6 @@ export default function VpsCard(input: Props) {
           if (!waitingForSSH.value) return;
           if (copiableAccounts().length > 0) {
             waitingForSSH.value = false;
-            // Discovery resolved into usable accounts: open the shared
-            // account dialog instead of copying anything automatically.
             void copySSHCommand();
           } else if (!props.sshLoading) {
             waitingForSSH.value = false;
@@ -282,8 +276,6 @@ export default function VpsCard(input: Props) {
             ? t("m.c12a50c262ca")
             : t("m.de300a2b89b7");
       }
-      // The single status line under the node name is driven only by the
-      // node record: enrollment and connection state map to localized text.
       function nodeStateText(): string {
         if (props.pending) return t("m.a890b3be09aa");
         if (!props.online) return t("m.d07581c22bb2");
@@ -475,10 +467,6 @@ export default function VpsCard(input: Props) {
         label: string;
         command: string;
       };
-      // The saved custom connection joins the same account dialog as the
-      // discovered accounts. It stays selectable while discovery is pending or
-      // unavailable and is the preferred default; discovered alternatives are
-      // preserved without duplicating an identical command.
       function savedAccountChoice(): SshAccountChoice | undefined {
         const host = props.nodePreference?.sshHost ?? "";
         const user = props.nodePreference?.sshUser ?? "";
@@ -532,21 +520,13 @@ export default function VpsCard(input: Props) {
       }
       async function copySSHCommand() {
         copied.reset();
-        // Every copy is confirmed inside the shared account dialog, with one
-        // or several accounts alike: the button click itself never copies,
-        // and Cancel or Escape keep the clipboard untouched.
         if (copiableAccounts().length > 0) return void chooseAndCopySSH();
-        // Without any known candidate, discover first; the floating bubble
-        // reports the pending detection and, if nothing usable appears, the
-        // unavailability instead of an unusable choice dialog.
         waitingForSSH.value = true;
         void showSshFeedback(t("ssh.discovering"));
         emit("discoverSsh", props.node);
       }
       async function chooseAndCopySSH() {
         const accounts = copiableAccounts();
-        // The saved custom connection is preferred when present; a previously
-        // confirmed account and the first offer follow in that order.
         const saved = savedAccountChoice();
         const preferred = saved
           ? accounts.find((account) => account.command === saved.command)
@@ -566,7 +546,6 @@ export default function VpsCard(input: Props) {
           t("ssh.copyAction"),
         );
         if (picked === null) {
-          // Cancelled and Escape stay without any copy.
           hideSshFeedback();
           return;
         }

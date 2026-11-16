@@ -1,5 +1,3 @@
-// Package control is the Core operation contract shared by Web, CLI and TUI.
-// It uses the Core's public API; it never opens its database or contacts Agents directly.
 package control
 
 import (
@@ -38,7 +36,7 @@ type Operation struct {
 	Parameters       []string            `json:"parameters"`
 	Query            []string            `json:"query"`
 	BodySchema       any                 `json:"bodySchema,omitempty"`
-	Transport        string              `json:"transport"` // json, download, upload, multipart, websocket, local
+	Transport        string              `json:"transport"`
 	Idempotent       bool                `json:"requiresIdempotencyKey,omitempty"`
 	Headers          map[string]any      `json:"headers,omitempty"`
 	Upload           *UploadContract     `json:"upload,omitempty"`
@@ -55,7 +53,6 @@ type UploadContract struct {
 	MaxBytes    int64  `json:"maxBytes,omitempty"`
 }
 
-// References read submitted input or returned data, never client-owned routes.
 type CompletionContract struct {
 	Operation        string            `json:"operation"`
 	Params           map[string]string `json:"params"`
@@ -207,8 +204,6 @@ func typeSchema(t reflect.Type) any {
 			f := t.Field(i)
 			tag := strings.Split(f.Tag.Get("json"), ",")
 			if f.Anonymous && tag[0] == "" {
-				// encoding/json promotes untagged embedded struct fields,
-				// including the manifest in an update release response.
 				embedded := f.Type
 				if embedded.Kind() == reflect.Pointer {
 					embedded = embedded.Elem()
@@ -280,8 +275,6 @@ func enrollmentSchema() any {
 	return body
 }
 
-// Operations enumerates every administrator API and local lifecycle entry point.
-// Request validation, authorization, confirmation and auditing remain in Core/Agent.
 func buildOperations() []Operation {
 	const node = "/api/v1/nodes/{nodeId}"
 	list := []Operation{
@@ -531,16 +524,7 @@ func markSecrets(value any) {
 }
 
 var operationCatalog = sync.OnceValue(func() []Operation { return buildOperations() })
-var operationIndex = sync.OnceValue(func() map[string]Operation {
-	index := map[string]Operation{}
-	for _, o := range operationCatalog() {
-		index[o.Name] = o
-	}
-	return index
-})
 
-// Operations returns caller-owned schemas; translations or external callers
-// cannot mutate the shared catalog used by concurrent CLI/TUI requests.
 func Operations() []Operation {
 	source := operationCatalog()
 	result := make([]Operation, len(source))
@@ -598,12 +582,6 @@ func cloneOperation(o Operation) Operation {
 		o.Completion = &copy
 	}
 	return o
-}
-func Find(name string) (Operation, error) {
-	if o, ok := operationIndex()[name]; ok {
-		return cloneOperation(o), nil
-	}
-	return Operation{}, fmt.Errorf("unknown operation %q; run nodedance operations", name)
 }
 func (o Operation) URLPath(params map[string]string) (string, error) {
 	path := o.Path

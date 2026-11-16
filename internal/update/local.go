@@ -18,8 +18,6 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/i18n"
 )
 
-// Local is the product's local maintenance presentation over the same requests and
-// transaction executor used by Core's discovered updates operations.
 func Local(ctx context.Context, component, dataDir string, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	if os.Geteuid() != 0 {
 		return fmt.Errorf("%s local update requires root", component)
@@ -107,7 +105,6 @@ func local(ctx context.Context, component, dataDir string, args []string, stdin 
 		}
 		*key = hex.EncodeToString(nonce[:])
 	}
-	// Emit the retry identity before submission, exactly as the terminal Core workflow does.
 	if _, err = fmt.Fprintln(stderr, i18n.TextFor(stderr, "Idempotency-Key:"), *key); err != nil {
 		return err
 	}

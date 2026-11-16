@@ -1,6 +1,3 @@
-// Package metrics stores only the newest accepted Agent metrics per node.
-// Connection identity and generation are bound by Core after authentication;
-// reports cannot choose their own identity, generation, or heartbeat lease.
 package metrics
 
 import (
@@ -28,8 +25,6 @@ var (
 	ErrInvalidReport      = errors.New("metrics report is invalid")
 )
 
-// Identity is always supplied from Core's authenticated connection context;
-// it is not part of MetricsSnapshot and cannot be selected by the Agent.
 type Identity struct {
 	AgentID string
 	NodeID  string
@@ -48,9 +43,6 @@ const (
 	LeaseRevoked LeaseStatus = "revoked"
 )
 
-// Lease must come from Core's current authorized node lease, including its
-// persisted status. A historical lastSeen+timeout or a metrics report cannot
-// assert that a node is currently online.
 type Lease struct {
 	Identity
 	Generation uint64
@@ -58,9 +50,6 @@ type Lease struct {
 	Status     LeaseStatus
 }
 
-// Record contains the last accepted report and its independent receive time.
-// ClockOffsetMillis is Core receive wall time minus Agent collected wall time;
-// freshness never uses this offset or wall-clock sample timestamps.
 type Record struct {
 	AgentID           string                   `json:"agentId"`
 	NodeID            string                   `json:"nodeId"`
@@ -75,8 +64,6 @@ type Record struct {
 	Metrics           protocol.MetricsSnapshot `json:"metrics"`
 }
 
-// View is calculated against the trusted Core generation and heartbeat lease
-// at read time. It needs no delayed sweeper to report an expired lease as stale.
 type View struct {
 	Record
 	NodeStatus       string    `json:"nodeStatus"`
@@ -110,9 +97,6 @@ func NewStore() *Store {
 	}
 }
 
-// Subscribe returns a coalesced node-change stream. A slow browser subscriber
-// retains one pending event per node, and no Agent handler waits for dashboard
-// I/O.
 func (s *Store) Subscribe() (<-chan string, func()) {
 	if s == nil {
 		closed := make(chan string)
@@ -138,8 +122,6 @@ func (s *Store) Subscribe() (<-chan string, func()) {
 	}
 }
 
-// Notify coalesces repeated node changes. Consumers always resolve the current
-// snapshot at send time.
 func (s *Store) Notify(nodeID string) {
 	if s == nil || nodeID == "" {
 		return
@@ -192,9 +174,6 @@ func (s *subscriber) run() {
 	}
 }
 
-// BindConnection records the generation Core assigned to an authenticated
-// AgentID/NodeID pair. The generation must come from Core's active lease, not
-// from a metrics report. A newer binding invalidates writes from older sockets.
 func (s *Store) BindConnection(identity Identity, generation uint64) error {
 	if s == nil || !validIdentity(identity) || generation == 0 {
 		return ErrInvalidIdentity
@@ -213,9 +192,6 @@ func (s *Store) BindConnection(identity Identity, generation uint64) error {
 	return nil
 }
 
-// UnbindConnection removes an authenticated connection only if it is still
-// the current generation. A delayed close from an older socket cannot unbind
-// a newer connection.
 func (s *Store) UnbindConnection(identity Identity, generation uint64) bool {
 	if s == nil || !validIdentity(identity) || generation == 0 {
 		return false
@@ -314,12 +290,6 @@ func (s *Store) Accept(identity Identity, connectionGeneration, metricsSequence 
 	return nil
 }
 
-// SnapshotAt derives online/stale status from Core's current authorized lease.
-// lease must be nil when Core has no active lease (offline/revoked); a non-nil
-// lease is online only when Core marks it online and its validity has not
-// expired. Historical lastSeen values and metrics cannot create a lease.
-// now should be Core's current time; its monotonic reading keeps freshness
-// stable across Core wall-clock adjustments.
 func (s *Store) SnapshotAt(nodeID string, lease *Lease, now time.Time) (View, bool) {
 	if s == nil {
 		return View{}, false
@@ -689,7 +659,6 @@ func markMetricStaleDisk(d *protocol.MetricsDisk) {
 	}
 }
 
-// ForgetNode discards cached data and rejects late reports from a removed node.
 func (s *Store) ForgetNode(nodeID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

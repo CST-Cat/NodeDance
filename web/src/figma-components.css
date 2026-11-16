@@ -1,5 +1,3 @@
-/* Claude UI kit v1.1: components, sizes and states read from the local .fig.
-   Existing operational layout/behavior is retained; no chat UI is introduced. */
 .app-shell[data-theme] {
   --control-height: 32px;
   --button-height: 36px;
@@ -18,8 +16,6 @@
   font-size: 14px;
   line-height: 20px;
   transition: background-color var(--motion-control) linear, border-color var(--motion-control) linear, color var(--motion-control) linear,
-    /* Restrained spring press feedback (OpenUI CdsMotionEngine pill pattern);
-       transform only applies to :active buttons. */
     transform 0.18s var(--ux-spring);
 }
 .app-shell[data-theme] button:where(:not(.terminal-backdrop button)):not(:where(.personal-settings *, .preferences-page *, .registry-controls, .registry-controls *)) {
@@ -132,7 +128,6 @@
   background: var(--control-bg);
 }
 .app-shell[data-theme] .ui-select .u031-btn:disabled { opacity: .5; color: var(--text); background: var(--control-bg); }
-/* Figma's 20 px large checkbox and radio, with actual source check asset. */
 input[type="checkbox"]:not(:where(.registry-controls, .registry-controls *)), input[type="radio"]:not(:where(.registry-controls, .registry-controls *)) {
   appearance: none;
   -webkit-appearance: none;
@@ -170,7 +165,6 @@ input[type="radio"]:not(:where(.registry-controls, .registry-controls *)):checke
 input[type="radio"]:not(:where(.registry-controls, .registry-controls *)):checked::after { opacity: 1; }
 input[type="checkbox"]:not(:where(.registry-controls, .registry-controls *)):focus-visible, input[type="radio"]:not(:where(.registry-controls, .registry-controls *)):focus-visible { outline: none; box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--figma-ring-primary); }
 input[type="checkbox"]:not(:where(.registry-controls, .registry-controls *)):disabled, input[type="radio"]:not(:where(.registry-controls, .registry-controls *)):disabled { opacity: .5; cursor: not-allowed; }
-/* 256 / 52 px sidebar variants; existing user resizing and context navigation remain. */
 .app-shell[data-theme] .workspace-sidebar { padding: 0 8px 12px; background: var(--sidebar-bg); border-right-width: .5px; }
 .app-shell[data-theme] .workspace-sidebar .wordmark { min-height: 68px; margin: 0 8px 8px; font-size: 24px; }
 .app-shell[data-theme] .workspace-label { margin: 8px 8px 12px; letter-spacing: 0; font-size: 12px; }
@@ -183,7 +177,6 @@ input[type="checkbox"]:not(:where(.registry-controls, .registry-controls *)):dis
 .app-shell[data-theme] .workspace-sidebar.is-collapsed .wordmark { justify-content: center; margin-inline: 0; }
 .app-shell[data-theme] .workspace-sidebar.is-collapsed .workspace-nav button { justify-content: center; padding: 8px; }
 .app-shell[data-theme] .workspace-account { padding: 12px 4px 0; border-top: 0; }
-/* Mobile menu panel: full-screen dropdown, published paddings. */
 @media (max-width: 900px) {
   .app-shell[data-theme] .workspace-sidebar { --mobile-menu-divider: #1414131a; width: 100%; padding: var(--nav--height, 4.25rem) var(--site--gutter, 2rem) var(--_spacing---space--8, 3rem); background: #F0EEE6; border-right-width: 0; }
   .app-shell[data-theme] .workspace-sidebar,
@@ -191,7 +184,6 @@ input[type="checkbox"]:not(:where(.registry-controls, .registry-controls *)):dis
   .app-shell[data-theme] .workspace-sidebar .wordmark { min-height: 0; margin: 0 0 24px; font-size: 24px; }
   .app-shell[data-theme] .workspace-label { margin: 0 0 12px; }
   .app-shell[data-theme] .workspace-nav button { align-items: center; min-height: 44px; width: 100%; padding: 1.1rem 0; border-radius: 0; border-bottom: var(--border-width--main, .0625rem) solid var(--mobile-menu-divider); font-size: var(--_typography---font-size--display-s, 1.5rem); font-weight: var(--_typography---font--display-sans-semibold, 600); }
-  /* Scale padded UiIcon viewports with the font; center the icon and label optically. */
   .app-shell[data-theme] .workspace-nav button > svg { block-size: 1.2cap; inline-size: auto; flex-shrink: 0; }
   .app-shell[data-theme] .workspace-nav button:hover { background: transparent; color: var(--accent); }
   .app-shell[data-theme] .workspace-nav button[aria-current="page"] { background: transparent; border-bottom-color: var(--mobile-menu-divider); }
@@ -214,7 +206,6 @@ input[type="checkbox"]:not(:where(.registry-controls, .registry-controls *)):dis
 @media (prefers-reduced-motion: reduce) {
   .app-shell[data-theme] *:not(:where(.registry-controls, .registry-controls *)), input[type="checkbox"]:not(:where(.registry-controls, .registry-controls *)), input[type="radio"]:not(:where(.registry-controls, .registry-controls *)) { transition-duration: 0s !important; animation-duration: 0s !important; }
 }
-/* Icon-only controls keep the kit's centered 32 px geometry. */
 .app-shell[data-theme] :is(.header-actions button, .navigation-toggle) {
   display: grid;
   place-items: center;
@@ -231,8 +222,6 @@ input[type="checkbox"]:not(:where(.registry-controls, .registry-controls *)):dis
 
 .app-shell[data-theme] .context-heading h2 { font-size: 14px; line-height: 20px; }
 
-/* Keep compact deployment choices aligned with the desktop registration grid.
-   Figma's small variant is 32 px / 12 px, rather than a clipped default label. */
 @media (min-width: 1100px) and (pointer: fine) {
   .app-shell[data-theme] .deployment-choices button {
     min-height: 32px;

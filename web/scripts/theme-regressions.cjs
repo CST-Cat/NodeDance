@@ -15,8 +15,6 @@ module.exports=async function({page,context,base,headers,artifacts,catalog}){
    await page.waitForFunction(mode=>document.querySelector('.app-shell')?.dataset.theme===mode,mode)
    const palette=await page.locator('.app-shell').evaluate(el=>{const s=getComputedStyle(el);return Object.fromEntries(['canvas','recessed','surface','text','muted','muted-strong','control-bg','control-border','accent-fill','accent-foreground','focus'].map(k=>[k,s.getPropertyValue('--'+k).trim()]))})
    for(const surface of ['canvas','surface','control-bg'])for(const text of ['text','muted','muted-strong'])assert.ok(contrast(palette[text],palette[surface])>=4.5,`${mode} ${text} on ${surface}: ${contrast(palette[text],palette[surface])}`)
-   // The primary Figma reference specifies a 30% resting border. Its exact
-   // alpha replaces the old 3:1 resting-border requirement; focus stays explicit.
    const kit=await page.locator('.app-shell').evaluate(el=>{const s=getComputedStyle(el);return Object.fromEntries(['background-tertiary','background-primary','border-secondary'].map(k=>[k,s.getPropertyValue('--figma-'+k).trim()]))})
    assert.equal(palette.canvas,kit['background-tertiary'])
    assert.equal(palette['control-bg'],kit['background-primary'])

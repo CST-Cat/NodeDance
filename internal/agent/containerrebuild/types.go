@@ -1,7 +1,3 @@
-// Package containerrebuild plans and executes conservative rebuilds of
-// non-Compose Docker containers. Named, anonymous, and bind-mounted data is
-// always preserved by reference; Docker image snapshots cover only the
-// container writable layer and are never represented as volume backups.
 package containerrebuild
 
 import (
@@ -38,8 +34,6 @@ const (
 	minimumSnapshotReserve = uint64(64 << 20)
 )
 
-// Container contains a single fresh Engine Inspect. Configuration fields are
-// kept only in Agent memory; plans and API responses use the redacted Plan DTO.
 type Container struct {
 	ID             string
 	Name           string
@@ -89,8 +83,6 @@ type TaskJournal interface {
 	UpdateProgress(context.Context, string, taskjournal.Progress) error
 }
 
-// Plan is safe for an authenticated administrator. It intentionally omits
-// environment, command, secret labels, and bind source paths.
 type Plan = protocol.ContainerRebuildPlan
 
 type Request struct {
@@ -132,8 +124,6 @@ func BuildPlan(current Container, spec protocol.RebuildSpec) (Plan, error) {
 	if err != nil {
 		return Plan{}, ErrUnsupportedConfiguration
 	}
-	// Validate reconstructed mount references while the old instance is
-	// untouched. An incomplete Inspect must fail during planning, before stop.
 	if _, _, _, err := createConfig(current, spec, "plan-validation", "", "", string(policy), current.Networks); err != nil {
 		return Plan{}, ErrUnsupportedConfiguration
 	}
@@ -252,9 +242,6 @@ func preserveMounts(config *container.Config, host *container.HostConfig, mounts
 	if config == nil || host == nil {
 		return ErrUnsupportedConfiguration
 	}
-	// Reuse the exact Engine-assigned volume ID for both named and anonymous
-	// volumes. A Config.Volumes destination without a prior mount remains
-	// anonymous and will be allocated only if the original was never mounted.
 	byTarget := make(map[string]container.MountPoint, len(mounts))
 	for _, item := range mounts {
 		if item.Destination == "" || item.Type == "" {
@@ -276,9 +263,6 @@ func preserveMounts(config *container.Config, host *container.HostConfig, mounts
 		}
 		delete(byTarget, current.Target)
 	}
-	// Docker may return bind and volume declarations in HostConfig.Binds.
-	// Preserve them and replace anonymous volume sources with the exact Engine
-	// volume name so a new anonymous volume is never silently allocated.
 	for index, bind := range host.Binds {
 		parts := strings.Split(bind, ":")
 		if len(parts) < 2 {
@@ -298,9 +282,6 @@ func preserveMounts(config *container.Config, host *container.HostConfig, mounts
 		}
 		delete(byTarget, target)
 	}
-	// Volumes exposed by Config but not present in Engine Mounts are only
-	// created by Docker on first start. All actual bind/volume mounts must have
-	// matched a known HostConfig source above.
 	for destination, point := range byTarget {
 		if _, configured := config.Volumes[destination]; !configured || point.Type == mount.TypeVolume || point.Type == mount.TypeBind {
 			return ErrUnsupportedConfiguration

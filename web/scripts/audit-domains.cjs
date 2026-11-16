@@ -1,6 +1,4 @@
 const {fillExpanded}=require('./expanded-textarea.cjs')
-// Real isolated Core, local certificate fixtures and browser UI. No real CA,
-// DNS provider, Agent, production directory or remote-control resource is used.
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=require('node:net')
 const {spawn,execFileSync}=require('node:child_process'),{chromium}=require('playwright')
 const {openNavigation}=require('./sidebar-navigation.cjs')
@@ -66,7 +64,6 @@ const root=path.resolve(__dirname,'../..'),directory=fs.mkdtempSync(path.join(os
    await screen.getByRole('button',{name:'批量添加',exact:true}).click();await alignedControls();assert.ok(!(await modal.innerText()).includes('Atomically'));await page.keyboard.press('Escape');await modal.waitFor({state:'detached'});
    await screen.getByRole('tab',{name:'证书',exact:true}).click();await screen.getByRole('row').filter({hasText:'Browser certificate'}).first().getByRole('button',{name:'导出证书与私钥',exact:true}).click();await alignedControls();assert.ok(!(await modal.innerText()).includes('--output'));await page.keyboard.press('Escape');await modal.waitFor({state:'detached'});await screen.getByRole('tab',{name:'任务',exact:true}).click();await page.waitForTimeout(900);
   }
-  // All records are real temporary Core records; no simulated external issuance.
   assert.ok(certificate.id);assert.deepEqual(errors,[]);console.log('Domain browser audit passed: nav order/deep links/auth, real domain/batch/import/private export, CA account selection, private-memory boundary, existing tokens, Chinese and light/dark/mobile dialogs.')
  }catch(e){if(browser){for(const c of browser.contexts())for(const page of c.pages()){try{console.error((await page.locator('body').innerText()).slice(-3000));}catch{}}}throw e}
  finally{if(browser)await browser.close();core.kill('SIGTERM');await new Promise(r=>core.exitCode!==null?r():core.once('exit',r));fs.rmSync(directory,{recursive:true,force:true})}

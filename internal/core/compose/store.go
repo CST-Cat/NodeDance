@@ -1,5 +1,3 @@
-// Package compose stores the last known Compose project inventory. Mutating
-// operations and their durable state are handled by the shared Core Task store.
 package compose
 
 import (

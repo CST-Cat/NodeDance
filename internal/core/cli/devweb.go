@@ -17,9 +17,6 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/i18n"
 )
 
-// DevWeb constants fix the shared development preview instance: it always
-// serves the newest Web build on port 8181 with its own data directory,
-// separate from the production Core on 8180.
 const (
 	devWebListen  = "0.0.0.0:8181"
 	devWebDataDir = "/var/lib/nodedance-devweb"

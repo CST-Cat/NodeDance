@@ -71,9 +71,6 @@ type statsStream struct {
 	subscribers map[*StatsSubscription]struct{}
 }
 
-// StatsSubscription has a one-element latest-value queue. Slow consumers lose
-// superseded samples rather than causing unbounded memory growth or blocking
-// Docker's shared stats reader.
 type StatsSubscription struct {
 	Updates <-chan protocol.ContainerStatsSnapshot
 	Errors  <-chan error
@@ -100,9 +97,6 @@ func NewStatsManager(engine StatsEngine, options StatsManagerOptions) (*StatsMan
 	return &StatsManager{engine: engine, closeTimeout: options.CloseTimeout, streams: make(map[string]*statsStream)}, nil
 }
 
-// Subscribe starts one Engine stats request for a container and shares its
-// newest sample with every subscriber. With no subscribers there is no stats
-// request or background polling for that container.
 func (m *StatsManager) Subscribe(ctx context.Context, id string) (*StatsSubscription, error) {
 	if ctx == nil {
 		return nil, errors.New("Docker stats subscription context is required")
@@ -274,9 +268,6 @@ func (m *StatsManager) readStream(stream *statsStream) {
 			streamErr = ErrStatsContainerID
 			return
 		}
-		// time.Now carries a process-local monotonic clock reading. Keep it on
-		// each in-memory sample to detect stream gaps and wall-clock anomalies;
-		// never use arrival spacing as the rate denominator.
 		sample.receivedAt = time.Now()
 		m.publish(stream, calculateStats(stream.id, sample, previous))
 		copy := sample
@@ -800,10 +791,6 @@ func sampleInterval(current, previous *time.Time) (float64, string) {
 	return seconds, ""
 }
 
-// trustedStatsSampleInterval uses Docker's sample timestamps as the rate
-// denominator. Local monotonic receive times only reject long stream gaps and
-// anomalous timestamps; close receive spacing is expected when buffered Docker
-// samples are drained and must never inflate the computed rate.
 func trustedStatsSampleInterval(current, previous rawDockerStats) (float64, string) {
 	seconds, reason := sampleInterval(current.Read, previous.Read)
 	if reason != "" {

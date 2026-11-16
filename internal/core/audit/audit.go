@@ -75,8 +75,6 @@ var outcomes = map[string]struct{}{
 var targetIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 var containerIDPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
-// Record writes only the typed, allowlisted audit fields. Request bodies,
-// headers, cookies, tokens and arbitrary metadata are not accepted here.
 func Record(ctx context.Context, execer Execer, event Event) error {
 	if _, ok := actions[event.Action]; !ok {
 		return errors.New("audit action is not allowlisted")
@@ -121,13 +119,6 @@ func Record(ctx context.Context, execer Execer, event Event) error {
 	_, err := execer.ExecContext(ctx, `INSERT INTO audit_entries(occurred_at, action, outcome, actor_id, remote_addr, target_kind, target_id)
 		VALUES(?, ?, ?, ?, ?, ?, ?)`, event.OccurredAt.Unix(), event.Action, event.Outcome, nullableActor(event.ActorID), event.RemoteAddr, targetKind, targetID)
 	return err
-}
-
-// FileTarget builds a safe, exact-target audit identifier. Paths are URL
-// escaped so control characters and Unicode cannot forge additional log
-// records; the format is node UUID : transfer UUID : escaped path/target.
-func FileTarget(nodeID, transferID, path string) string {
-	return nodeID + ":" + transferID + ":" + url.QueryEscape(path)
 }
 
 func validFileTarget(value string) bool {

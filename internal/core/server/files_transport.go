@@ -201,10 +201,6 @@ func validateAgentFileFrame(connection *agentConnection, envelope protocol.Envel
 	}
 }
 
-// closeFileTransfersForSession revokes every active Core-to-Agent file stream
-// owned by a browser Session. It marks each transfer closed while holding the
-// same transfer lock used to enqueue Agent requests, so no later upload chunk
-// or commit can be queued behind the cancellation.
 func (s *Server) closeFileTransfersForSession(sessionID string) {
 	if sessionID == "" {
 		return
@@ -328,9 +324,6 @@ func (s *Server) enqueueFileCancel(connection *agentConnection, id string) bool 
 	case connection.commands <- envelope:
 		return true
 	default:
-		// Cancellation is mandatory for temporary files. If the shared command
-		// queue cannot carry it, dropping the Agent connection forces its local
-		// transfer bridge to abort every uncommitted temp file.
 		if connection.cancel != nil {
 			connection.cancel()
 		}
@@ -462,8 +455,6 @@ func (s *Server) waitFileMessage(ctx context.Context, connection *agentConnectio
 			s.closeCoreFileTransfer(connection, transfer, true, errors.New("file transfer is idle"))
 			return protocol.Envelope{}, errors.New("file transfer is idle")
 		case <-ticker.C:
-			// Re-check Session authorization while waiting; the transfer idle
-			// deadline remains independent of the authorization polling interval.
 		}
 	}
 }

@@ -109,8 +109,6 @@ if [[ -L "$data_dir" || ( -e "$data_dir" && ! -d "$data_dir" ) ]]; then
 fi
 
 if [[ -z "$release_tag" ]]; then
-  # Plain HTTPS version file published by the release workflow; no GitHub REST
-  # API and no per-IP rate quota in the install path.
   release_tag=$(curl --fail --silent --show-error --location \
     --proto '=https' --proto-redir '=https' --tlsv1.2 "$LATEST_VERSION_URL" 2>/dev/null | tr -d '[:space:]') \
     || fail 'could not resolve the latest stable Core release; pass --release-tag core-vMAJOR.MINOR.PATCH to pin one'

@@ -35,8 +35,6 @@ type Recording struct {
 	To        time.Time  `json:"to"`
 }
 
-// The recorder retains a two-hour rolling window plus +/- five-minute incident
-// windows for seven days, bounded to 10,000 frames per node even under storms.
 func recordSnapshot(ctx context.Context, tx *sql.Tx, node string, snapshot protocol.MetricsSnapshot, at time.Time) error {
 	if snapshot.Host == nil || snapshot.Host.Observability == nil {
 		return nil
@@ -75,8 +73,6 @@ func recordSnapshot(ctx context.Context, tx *sql.Tx, node string, snapshot proto
 			return err
 		}
 	}
-	// Bounded work is indexed by node/time. The global retention worker also
-	// expires disconnected nodes; an active node cannot bypass its row budget.
 	if _, err = tx.ExecContext(ctx, `DELETE FROM observation_frames WHERE node_id=? AND received_at IN (SELECT received_at FROM observation_frames WHERE node_id=? ORDER BY received_at DESC LIMIT -1 OFFSET 10000)`, node, node); err != nil {
 		return err
 	}
@@ -178,8 +174,6 @@ type Analysis struct {
 	AfterMean     *float64   `json:"afterMean,omitempty"`
 }
 
-// Summarize requires sufficient coverage, fresh data, no minute gaps over five
-// minutes and a stable positive regression before projecting exhaustion.
 func Summarize(key string, points []Point, now time.Time, capacity *float64, changeAt *time.Time) Analysis {
 	a := Analysis{Key: key, Status: "unknown", Reason: "insufficient_history", Samples: len(points)}
 	if len(points) < 60 {

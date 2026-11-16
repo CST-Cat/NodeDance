@@ -1,4 +1,3 @@
-// Package hostcontrol owns Agent settings and durable host command execution.
 package hostcontrol
 
 import (

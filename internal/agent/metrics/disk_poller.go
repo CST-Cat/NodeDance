@@ -35,9 +35,6 @@ func (p *diskPoller) sample(parent context.Context) DiskSnapshot {
 	result := make(chan DiskSnapshot, 1)
 	go func() {
 		snapshot := collectDisks(ctx, p.source, at)
-		// Release the slot only after all syscalls have returned. There are no
-		// parked workers between scans, and a context-ignoring Statfs can leave
-		// at most this one active scan behind after the caller times out.
 		p.active.Store(false)
 		result <- snapshot
 	}()
@@ -56,8 +53,6 @@ func collectDisks(ctx context.Context, source collectorSource, at time.Time) Dis
 		return DiskSnapshot{State: StateUnknown, Reason: reasonFromError(err), SampledAt: at}
 	}
 
-	// Capacity-less kernel interfaces never enter disk samples, including
-	// when mountpoints are explicitly selected.
 	byMountpoint := make(map[string]disk.PartitionStat, len(partitions))
 	for _, partition := range partitions {
 		if partition.Mountpoint == "" || pseudoFilesystem(partition.Fstype) {
@@ -120,8 +115,6 @@ func pseudoFilesystem(name string) bool {
 	}
 }
 
-// Default capacity monitoring covers persistent storage, not runtime mounts.
-// An explicit IncludeMountpoints selection is applied by configuredDiskSource.
 func defaultStorageMount(p disk.PartitionStat) bool {
 	if pseudoFilesystem(p.Fstype) || p.Mountpoint == "" {
 		return false

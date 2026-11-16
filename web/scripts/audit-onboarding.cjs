@@ -1,6 +1,5 @@
 const {fillExpanded}=require('./expanded-textarea.cjs')
 const {selectValue}=require('./arc-controls.cjs')
-// Real isolated Core; network peers, SSH and remote deployment are protocol-only fixtures.
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=require('node:net');
 const {spawn}=require('node:child_process'),{chromium}=require('playwright');
 const assertSettingsSpacing=require('./settings-spacing.cjs');

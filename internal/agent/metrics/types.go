@@ -1,8 +1,3 @@
-// Package metrics samples host statistics for the Agent.
-//
-// It has no dependency on the Core, browser sessions, or Docker. Consumers may
-// marshal Snapshot as JSON, but transport and node identity are owned by the
-// Agent protocol layer.
 package metrics
 
 import (
@@ -18,9 +13,6 @@ const (
 	StateUnknown State = "unknown"
 )
 
-// Metric never uses a zero value to mean that a measurement failed. Value is
-// nil when State is unknown, and Reason contains a stable machine-readable
-// explanation such as permission_denied, warming_up, or counter_reset.
 type Metric[T any] struct {
 	State     State     `json:"state"`
 	Value     *T        `json:"value,omitempty"`

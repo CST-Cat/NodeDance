@@ -1,4 +1,3 @@
-// Package sshdiscovery observes the host SSH service; it never changes SSH or reads credentials.
 package sshdiscovery
 
 import (
@@ -51,7 +50,6 @@ func Discover(ctx context.Context) sshconnection.Info {
 		v.Reason = "root_required"
 		return v
 	}
-	// -T applies sshd_config Include files without starting or modifying the daemon.
 	config, _ := command(ctx, "/usr/sbin/sshd", "-T")
 	sockets, err := command(ctx, "ss", "-H", "-lntp")
 	if err != nil {

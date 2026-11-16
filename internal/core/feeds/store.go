@@ -377,7 +377,6 @@ func (s *Store) refreshOne(parent context.Context) {
 	s.mu.Unlock()
 	result, fetchErr := s.fetch(ctx, sub, etag, modified)
 	cancel()
-	// Store outcomes even on shutdown using an independently bounded context.
 	finishCtx, finishCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer finishCancel()
 	if e := s.finish(finishCtx, sub, result, fetchErr); e != nil {
@@ -430,14 +429,12 @@ func (s *Store) finish(ctx context.Context, sub Subscription, result fetched, fe
 				return e
 			}
 		}
-		// Retain current feed identifiers for deduplication; old identifiers expire after 180 days.
 		if _, e = tx.ExecContext(ctx, `DELETE FROM feed_items WHERE feed_id=? AND last_seen<?`, sub.ID, stamp(now.Add(-180*24*time.Hour))); e != nil {
 			return e
 		}
 		if _, e = tx.ExecContext(ctx, `DELETE FROM feed_items WHERE feed_id=? AND id NOT IN (SELECT id FROM feed_items WHERE feed_id=? ORDER BY last_seen DESC,id LIMIT 10000)`, sub.ID, sub.ID); e != nil {
 			return e
 		}
-		// Keep only 500 full summaries. Identity/read metadata remains available for deduplication.
 		if _, e = tx.ExecContext(ctx, `UPDATE feed_items SET summary='' WHERE feed_id=? AND summary!='' AND id NOT IN (SELECT id FROM feed_items WHERE feed_id=? ORDER BY first_seen DESC,id LIMIT 500)`, sub.ID, sub.ID); e != nil {
 			return e
 		}

@@ -194,10 +194,6 @@ func (m *Manager) persist(job Job) error {
 	return nil
 }
 
-// stageProgress maps a job's stage to its fraction complete using the
-// ordered stage sequence of the flow the job belongs to. Stages outside the
-// forward sequence (rolling_back on a failed update) keep the progress the
-// job already reached, so the reported value never moves backwards.
 var releaseStages = []string{"queued", "downloading", "stopping", "backing_up", "switching", "starting", "verifying", "complete"}
 var sourceStages = []string{"queued", "pulling", "building", "installing", "restarting", "verifying", "complete"}
 var rollbackStages = []string{"queued", "rolling_back", "rolled_back"}
@@ -258,9 +254,6 @@ func (m *Manager) current(ctx context.Context, component string) (string, error)
 	var raw []byte
 	var err error
 	if target.Mode == "docker" {
-		// Only the Agent still deploys in a container. Docker exec cannot resolve
-		// the original image path after its host-namespace entry, so the version
-		// comes from the running container process's executable on the host.
 		pidRaw, pidErr := m.command(ctx, "docker", "inspect", "--format", "{{.State.Pid}}", target.Container)
 		if pidErr != nil {
 			return "", pidErr
@@ -382,8 +375,6 @@ func (m *Manager) Apply(ctx context.Context, r Request, key string) (Job, error)
 		return Job{}, errors.New("another update is running")
 	}
 	m.active = true
-	// Admission includes release lookup and durable acceptance. Shutdown must
-	// retain the controller lock until both admission and execution have exited.
 	m.workers.Add(1)
 	m.mu.Unlock()
 	defer m.workers.Done()

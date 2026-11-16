@@ -1,5 +1,3 @@
-// Package probes performs bounded, outbound service checks on the Agent's
-// managed host. It does not expose a listener or accept browser-supplied data.
 package probes
 
 import (
@@ -39,7 +37,7 @@ func NewConfiguredExecutor(settings func() protocol.AgentSettings) *Executor {
 		return networkpolicy.Dial(ctx, network, address, settings())
 	}
 	transport := &http.Transport{
-		Proxy:                 nil, // Probes always originate directly from the managed node.
+		Proxy:                 nil,
 		DialContext:           dial,
 		TLSHandshakeTimeout:   time.Duration(protocol.MaxProbeTimeoutSeconds) * time.Second,
 		ResponseHeaderTimeout: time.Duration(protocol.MaxProbeTimeoutSeconds) * time.Second,

@@ -14,8 +14,6 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/update"
 )
 
-// The update controller owns privileged deployment transactions. Core only
-// authenticates requests and routes the same contract locally or to an Agent.
 func (s *Server) handleUpdates(w http.ResponseWriter, r *http.Request) {
 	action := strings.TrimPrefix(r.URL.Path, "/api/v1/updates/")
 	method := http.MethodGet

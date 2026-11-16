@@ -2,8 +2,6 @@ package agents
 
 import "context"
 
-// EnrollmentIP uses the authenticated Agent's enrollment audit record, never an
-// administrator's browser address or the address of the current list request.
 func (r *Repository) EnrollmentIP(ctx context.Context, agentID string) string {
 	if agentID == "" {
 		return ""

@@ -18,8 +18,6 @@ import (
 
 const maxCommandHistoryFiles = 10000
 
-// Compacted outcomes retain the original request hash and ID. Dropping output
-// must never turn an uncertain retry into a second script execution.
 func (m *Manager) openArchive() error {
 	path := filepath.Join(m.dir, "command-history.sqlite")
 	fd, err := unix.Open(path, unix.O_RDWR|unix.O_CREAT|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0600)
@@ -72,7 +70,6 @@ func (m *Manager) readJob(id string, j *protocol.CommandJob) error {
 
 func (m *Manager) cleanupLocked(now time.Time) (protocol.CommandCleanup, error) {
 	result := protocol.CommandCleanup{}
-	// Interrupted outcomes have an unknown external effect and no expiry.
 	removed, err := m.archive.Exec("DELETE FROM command_archive WHERE expires_at>0 AND expires_at<?", now.UnixNano())
 	if err != nil {
 		return result, err

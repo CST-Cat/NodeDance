@@ -202,7 +202,6 @@ func (s *Server) handleAccountAPI(w http.ResponseWriter, r *http.Request, curren
 		return true
 	}
 	defer tx.Rollback()
-	// Revalidate the acting administrator under the same lock as the mutation.
 	if !activeAdministrator(tx, r, current) {
 		http.Error(w, "permission denied", 403)
 		return true

@@ -180,8 +180,6 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, response)
 }
 
-func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) { s.signIn(w, r, nil) }
-
 func (s *Server) signIn(w http.ResponseWriter, r *http.Request, previous *session) {
 	var request protocol.AuthLoginRequest
 	if !decodeJSON(w, r, &request) {
@@ -203,7 +201,6 @@ func (s *Server) signIn(w http.ResponseWriter, r *http.Request, previous *sessio
 	var userID int64
 	err := s.store.DB.QueryRow(`SELECT id, username, password_hash, password_salt, password_version, display_name, role FROM users WHERE username=? AND enabled=1`, request.Username).Scan(&userID, &username, &passwordHash, &salt, &version, &displayName, &role)
 	if errors.Is(err, sql.ErrNoRows) {
-		// Keep unknown usernames on the same bounded password-work path.
 		_, _, _ = auth.HashPassword(request.Password)
 		s.rejectLogin(w, r, remote)
 		return
@@ -225,10 +222,6 @@ func (s *Server) signIn(w http.ResponseWriter, r *http.Request, previous *sessio
 		http.Error(w, "request failed", http.StatusInternalServerError)
 		return
 	}
-	// Argon2 runs before the transaction to keep SQLite's write lock brief.
-	// Re-read the verifier under the session-creation transaction so a login
-	// verified just before a password change cannot create a fresh session
-	// after that change has revoked every existing session.
 	var currentHash, currentSalt []byte
 	var currentVersion, currentDisplayName, currentUsername, currentRole string
 	err = tx.QueryRowContext(r.Context(), `SELECT username, password_hash, password_salt, password_version, display_name, role FROM users WHERE id=? AND enabled=1`, userID).Scan(&currentUsername, &currentHash, &currentSalt, &currentVersion, &currentDisplayName, &currentRole)

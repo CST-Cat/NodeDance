@@ -20,8 +20,6 @@ func ValidUsername(value string) bool {
 	return true
 }
 
-// InitialCredentials generates each omitted field independently using the OS CSPRNG.
-// Usernames have 128 random bits; passwords have 256 random bits.
 func InitialCredentials(username, password string) (string, string, error) {
 	if username == "" {
 		var bytes [16]byte

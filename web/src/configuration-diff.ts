@@ -6,8 +6,6 @@ export type ConfigDiffLine = {
   raw: string;
 };
 
-// Diffing is presentation only; it never normalizes or changes saved content.
-// Bound the preview work independently of Core's existing config validation.
 export function configurationDiff(before: string, after: string): ConfigDiffLine[] | null {
   if (before.length + after.length > 256_000) return null;
   const changes = diffLines(before, after, { timeout: 80, maxEditLength: 4000 });

@@ -1,6 +1,3 @@
-// Package containerstreams provides bounded, cancellation-aware Docker log and
-// on-demand statistics streams. It has no Agent runtime, transport, or browser
-// session integration.
 package containerstreams
 
 import (
@@ -16,8 +13,6 @@ const defaultInspectTimeout = 10 * time.Second
 
 var ErrInvalidContainerID = errors.New("container stream requires a full Docker container ID")
 
-// Engine is the narrow, read-only Docker API used by the stream components.
-// Every returned body belongs to the caller and must be closed.
 type Engine interface {
 	Inspect(context.Context, string) (ContainerInfo, error)
 	OpenLogs(context.Context, string, LogsOptions) (io.ReadCloser, error)
@@ -29,9 +24,6 @@ type ContainerInfo struct {
 	TTY bool
 }
 
-// SDKEngine wraps the Moby SDK with a response-header deadline and no whole
-// response timeout. Log follow and stats bodies remain attached until their
-// caller cancels or closes them.
 type SDKEngine struct {
 	client         *client.Client
 	inspectTimeout time.Duration

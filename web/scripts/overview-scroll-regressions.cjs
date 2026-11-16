@@ -1,4 +1,3 @@
-// Width chooses the presentation; scroll input must never reshape the toolbar.
 const assert=require('node:assert/strict'),path=require('node:path')
 async function settle(page){await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))))}
 async function checkStableScroll(page){

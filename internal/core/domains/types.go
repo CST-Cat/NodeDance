@@ -1,4 +1,3 @@
-// Package domains owns domain inventory, private certificate material and ACME jobs.
 package domains
 
 import "time"

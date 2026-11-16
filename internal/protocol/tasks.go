@@ -50,8 +50,6 @@ var (
 	environmentKey        = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 )
 
-// TaskAction and TaskIntent are the single canonical safe request representation
-// shared by Core and Agent. Never add secrets, command text, or arbitrary JSON.
 type TaskAction string
 
 const (
@@ -85,8 +83,6 @@ const (
 	TaskContainerCreate TaskAction = "container_create"
 )
 
-// ContainerCreateSpec is delivered only once in TaskDispatch. It is excluded
-// from TaskIntent and both durable task journals; only its digest is persisted.
 type ContainerCreateSpec struct {
 	Image          string                 `json:"image"`
 	Name           string                 `json:"name"`
@@ -113,8 +109,6 @@ type ContainerCreateMount struct {
 	ReadOnly bool   `json:"readOnly,omitempty"`
 }
 
-// ClearContainerCreateSpec best-effort clears the in-memory, one-use task
-// payload after its transport or execution lifetime ends.
 func ClearContainerCreateSpec(spec *ContainerCreateSpec) {
 	if spec == nil {
 		return
@@ -136,9 +130,6 @@ func ClearContainerCreateSpec(spec *ContainerCreateSpec) {
 	spec.Image, spec.Name, spec.Network, spec.RestartPolicy = "", "", "", ""
 }
 
-// ComposeTaskSpec identifies a project from Docker's Compose labels. File
-// content is kept out of the durable task intent and is sent only once in the
-// task dispatch when saving a file.
 type ComposeTaskSpec struct {
 	Project       ComposeProjectRef `json:"project"`
 	FileIndex     int               `json:"fileIndex,omitempty"`
@@ -146,10 +137,6 @@ type ComposeTaskSpec struct {
 	ContentSHA256 string            `json:"contentSha256,omitempty"`
 }
 
-// RebuildPortBinding is the only mutable part of a controlled container
-// rebuild in this stage. Every other supported Docker setting is copied from
-// a fresh Engine Inspect. An empty PortBindings slice means preserve existing
-// bindings; ClearPortBindings explicitly requests no published host ports.
 type RebuildPortBinding struct {
 	ContainerPort string `json:"containerPort"`
 	HostIP        string `json:"hostIp,omitempty"`
@@ -162,7 +149,6 @@ type RebuildSpec struct {
 	CleanupTaskID     string               `json:"cleanupTaskId,omitempty"`
 }
 
-// FileTaskSpec contains only bounded metadata for one filesystem operation.
 type FileTaskSpec struct {
 	Transfer        *FileTransferSpec `json:"transfer,omitempty"`
 	Format          string            `json:"format,omitempty"`
@@ -174,8 +160,6 @@ type FileTaskSpec struct {
 	SHA256          string            `json:"sha256,omitempty"`
 }
 
-// AgentDeployTaskSpec identifies a Tailscale peer for Core-local provisioning.
-// SSH credentials and one-time enrollment tokens are deliberately excluded.
 type AgentDeployTaskSpec struct {
 	PeerIdentity          string `json:"peer_identity"`
 	PeerName              string `json:"peer_name"`
@@ -237,8 +221,6 @@ type TaskIntent struct {
 	CreateSHA256    string               `json:"create_sha256,omitempty"`
 }
 
-// CanonicalTaskIntent returns the exact canonical JSON used in the task
-// identity digest. The typed DTO prevents callers from smuggling extra fields.
 func CanonicalTaskIntent(intent TaskIntent) ([]byte, error) {
 	if err := ValidateTaskIntent(intent); err != nil {
 		return nil, err
@@ -600,9 +582,6 @@ func validComposeCreateTaskSpec(intent TaskIntent) bool {
 		intent.Compose.BaseSHA256 == "" && composeContentHash.MatchString(intent.Compose.ContentSHA256)
 }
 
-// ImageTargetKey maps an image request to the fixed-width resource identifier
-// used by the durable task ledger. The original reference or image ID remains
-// a separate typed field; registry credentials are never part of this value.
 func ImageTargetKey(value string) string {
 	digest := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(digest[:])
@@ -689,10 +668,6 @@ func validRebuildPortBinding(binding RebuildPortBinding) bool {
 	return true
 }
 
-// TaskIdentity constructs the shared identity digest input. TaskID and
-// IdempotencyKey identify the ledger row and are deliberately checked outside
-// the request digest; NodeID, full target, resource, action, and intent are
-// covered by the digest exactly as taskstate specifies.
 func TaskIdentity(taskID, nodeID, idempotencyKey string, intent TaskIntent) (taskstate.Identity, error) {
 	payload, err := CanonicalTaskIntent(intent)
 	if err != nil {
@@ -769,13 +744,10 @@ type TaskJournalHello struct {
 }
 
 type TaskJournalStatus struct {
-	Accepted       bool   `json:"accepted"`
-	JournalID      string `json:"journalId"`
-	ReviewRequired bool   `json:"reviewRequired"`
-	Capacity       int    `json:"capacity"`
-	// SnapshotID and SnapshotAccepted form the durable Core acknowledgement
-	// for one complete, reconciled Agent journal snapshot. They are omitted in
-	// the initial journal acceptance response.
+	Accepted         bool   `json:"accepted"`
+	JournalID        string `json:"journalId"`
+	ReviewRequired   bool   `json:"reviewRequired"`
+	Capacity         int    `json:"capacity"`
 	SnapshotID       string `json:"snapshotId,omitempty"`
 	SnapshotAccepted bool   `json:"snapshotAccepted,omitempty"`
 }
@@ -794,21 +766,15 @@ type TaskSnapshotPage struct {
 }
 
 type TaskDispatch struct {
-	TaskID         string     `json:"taskId"`
-	NodeID         string     `json:"nodeId"`
-	JournalID      string     `json:"journalId"`
-	TargetID       string     `json:"targetId"`
-	IdempotencyKey string     `json:"idempotencyKey"`
-	RequestDigest  string     `json:"requestDigest"`
-	Intent         TaskIntent `json:"intent"`
-	// RegistryAuth is a one-delivery credential, outside TaskIntent and its
-	// digest, so Core and Agent task journals cannot persist it.
-	RegistryAuth *RegistryCredentials `json:"registryAuth,omitempty"`
-	// ComposeContent is a one-delivery create/save body; only its SHA-256 is
-	// persisted in TaskIntent and Agent journal records.
-	ComposeContent *ComposeContent `json:"composeContent,omitempty"`
-	// ContainerCreate is a single-delivery specification. Only its digest is
-	// persisted in the task intent and Agent journal.
+	TaskID          string               `json:"taskId"`
+	NodeID          string               `json:"nodeId"`
+	JournalID       string               `json:"journalId"`
+	TargetID        string               `json:"targetId"`
+	IdempotencyKey  string               `json:"idempotencyKey"`
+	RequestDigest   string               `json:"requestDigest"`
+	Intent          TaskIntent           `json:"intent"`
+	RegistryAuth    *RegistryCredentials `json:"registryAuth,omitempty"`
+	ComposeContent  *ComposeContent      `json:"composeContent,omitempty"`
 	ContainerCreate *ContainerCreateSpec `json:"containerCreate,omitempty"`
 }
 
@@ -854,9 +820,6 @@ type TaskReconcileRequest struct {
 	Intent         TaskIntent `json:"intent"`
 }
 
-// TaskCancelRequest only interrupts an active image pull. A canceled state is
-// still reported by the Agent after the Engine call stops and the requested
-// image state has been inspected.
 type TaskCancelRequest struct {
 	TaskID    string `json:"taskId"`
 	JournalID string `json:"journalId"`
@@ -953,8 +916,6 @@ func ValidateTaskDispatch(envelope Envelope, dispatch TaskDispatch, nodeID, jour
 			return fmt.Errorf("%w: Compose payload is invalid for this dispatch", ErrInvalidTaskMessage)
 		}
 	} else if dispatch.Intent.Action == TaskComposeSave || dispatch.Intent.Action == TaskComposeCreate {
-		// The Core keeps file bodies only in memory. If that one-use payload was
-		// lost, the Agent will persist a failed result without changing the file.
 	}
 	if dispatch.ContainerCreate != nil {
 		if dispatch.Intent.Action != TaskContainerCreate {
@@ -965,8 +926,6 @@ func ValidateTaskDispatch(envelope Envelope, dispatch TaskDispatch, nodeID, jour
 			return fmt.Errorf("%w: container create payload digest does not match the task", ErrInvalidTaskMessage)
 		}
 	} else if dispatch.Intent.Action == TaskContainerCreate {
-		// The Core keeps this specification only in memory. The Agent records a
-		// failed task if the one-use payload is absent.
 	}
 	digest, err := ParseDigest(dispatch.RequestDigest)
 	if err != nil {
@@ -1067,10 +1026,6 @@ func ValidateTaskResult(status taskstate.Status, result TaskResult) error {
 	return nil
 }
 
-// ValidateTaskReportAck binds a report acknowledgement to the active
-// connection generation and exact report revision. A task ID alone is not
-// sufficient because a queued acknowledgement can arrive after a terminal
-// report for the same task.
 func ValidateTaskReportAck(envelope Envelope, ack TaskReportAck, generation uint64) error {
 	if envelope.Version != CurrentVersion || envelope.Type != TypeTaskReportAck || envelope.Generation != generation ||
 		generation == 0 || envelope.RequestID == "" || envelope.RequestID != ack.TaskID ||
@@ -1099,9 +1054,6 @@ func ValidateTaskReconcile(envelope Envelope, request TaskReconcileRequest, node
 }
 
 func validTaskIdentityFields(taskID, nodeID, journalID, targetID, key string) bool {
-	// Core generates every task identity in the file-task grammar, so path
-	// syntax can never reach identifiers that Agent code interpolates into
-	// derived stage names.
 	if !validFileTaskID(taskID) || nodeID == "" || len(nodeID) > taskstate.MaxIdentityBytes ||
 		journalID == "" || len(journalID) != 64 || !(IsFullContainerID(targetID) || validContainerCreateTarget(targetID)) || key == "" || len(key) > taskstate.MaxIdempotencyKeyBytes {
 		return false

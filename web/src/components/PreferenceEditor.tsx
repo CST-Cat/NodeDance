@@ -38,8 +38,6 @@ export default function PreferenceEditor(input: Props) {
       const saving = cell(false),
         error = cell(""),
         notice = cell("");
-      // Telemetry recreates parent props. Only changed persisted preference content
-      // may replace the draft, never a new object holding the same saved values.
       watchState(
         () => JSON.stringify(props.preference),
         (value) => {

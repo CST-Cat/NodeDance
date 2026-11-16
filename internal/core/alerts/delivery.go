@@ -18,11 +18,8 @@ import (
 )
 
 type Sender struct {
-	HTTPClient *http.Client
-	Timeout    time.Duration
-	// smtpRootCAs is intentionally package-private. Production delivery always
-	// uses the system trust roots; tests can add a local fixture CA without
-	// weakening certificate or hostname verification.
+	HTTPClient  *http.Client
+	Timeout     time.Duration
 	smtpRootCAs *x509.CertPool
 }
 
@@ -196,9 +193,6 @@ func smtpNotificationText(payload string) (string, error) {
 	return strings.Join(lines, "\r\n"), nil
 }
 
-// SMTP values are plain-text body content. Escape line breaks and control
-// characters so an untrusted notification value cannot mimic another header
-// or add SMTP DATA commands; ordinary Unicode text remains readable.
 func escapeSMTPText(value string) string {
 	var out strings.Builder
 	for _, r := range value {

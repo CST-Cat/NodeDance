@@ -22,9 +22,6 @@ import (
 
 var errTaskSnapshotRequired = errors.New("complete task snapshot is required")
 
-// taskBridgeRuntime is created once for the Agent process. WebSocket
-// reconnects attach a generation to its Runner but never own or cancel its
-// journal, executor, or accepted work.
 type taskBridgeRuntime struct {
 	nodeID  string
 	journal *taskjournal.Store
@@ -295,9 +292,6 @@ func runTaskBridgeSession(ctx context.Context, writer *socketEnvelopeWriter, run
 					protocol.ValidateTaskCancelRequest(envelope, request, nodeID, journalID, generation) != nil {
 					return errors.New("Core image cancellation request is invalid")
 				}
-				// A missing or already finished task is harmless here. Its durable
-				// report remains authoritative; cancellation is never acknowledged
-				// until the executor confirms the stopped Engine state.
 				runner.CancelImagePull(request.TaskID)
 				runner.CancelFileTransfer(request.TaskID)
 			case protocol.TypeTaskReportAck:
@@ -313,10 +307,6 @@ func runTaskBridgeSession(ctx context.Context, writer *socketEnvelopeWriter, run
 				}
 				if err := runner.AcknowledgeReport(generation, ack.TaskID, ack.ReportRevision); err != nil {
 					if errors.Is(err, taskrunner.ErrStaleReportAck) {
-						// A newer durable state may have replaced this report before
-						// its ACK arrived. Keep the newer report pending and let its
-						// ACK or a complete snapshot clear it; an old ACK is not a
-						// reason to tear down the synchronized connection.
 						continue
 					}
 					return errors.New("Core task report acknowledgement is stale")

@@ -41,8 +41,6 @@ func NewExecutor(engine Engine, journal Journal) (*Executor, error) {
 		verificationTimeout: defaultVerifyTimeout}, nil
 }
 
-// ExecuteImage runs one already-durable task dispatch. Registry credentials
-// live only in this call and are cleared as soon as Docker accepts the pull.
 func (e *Executor) ExecuteImage(ctx context.Context, dispatch protocol.TaskDispatch, onProgress func()) (taskjournal.Snapshot, error) {
 	defer wipeCredentials(dispatch.RegistryAuth)
 	if ctx == nil || dispatch.Intent.Action != protocol.TaskImagePull && dispatch.Intent.Action != protocol.TaskImageDelete ||
@@ -112,8 +110,6 @@ func (e *Executor) pull(ctx context.Context, dispatch protocol.TaskDispatch, _ t
 				Code: taskjournal.ResultFailed, ObservedState: "invalid_auth"})
 		}
 		encoded, err := EncodeRegistryCredentials(dispatch.RegistryAuth.Username, dispatch.RegistryAuth.Password)
-		// Avoid retaining the credential-bearing fields after constructing Docker's
-		// one-operation header. These values are never journaled or logged.
 		wipeCredentials(dispatch.RegistryAuth)
 		dispatch.RegistryAuth = nil
 		if err != nil {
@@ -148,8 +144,6 @@ func (e *Executor) pull(ctx context.Context, dispatch protocol.TaskDispatch, _ t
 		}
 	}
 	pullErr := e.engine.Pull(operationCtx, ref, authHeader, func(value PullProgress) {
-		// Total zero means Docker has not supplied an aggregate byte count.
-		// Invalid samples are discarded rather than manufacturing a capped value.
 		if value.Total == 0 || value.Completed > value.Total {
 			return
 		}
@@ -157,9 +151,6 @@ func (e *Executor) pull(ctx context.Context, dispatch protocol.TaskDispatch, _ t
 		hasLatest = true
 		persistProgress(false)
 	})
-	// The last Engine update can arrive within the throttle window. Flush the
-	// most recent observed counters before finalizing the task so a fast pull
-	// does not leave only an earlier or zero snapshot in the durable journal.
 	persistProgress(true)
 	operationCancel()
 	authHeader = ""
@@ -230,8 +221,6 @@ func (e *Executor) remove(ctx context.Context, dispatch protocol.TaskDispatch, _
 	return e.markUnknown(context.WithoutCancel(ctx), dispatch.TaskID, errors.Join(removeErr, inspectErr))
 }
 
-// ReconcileImage performs reads only; it never repeats pull or remove. An
-// unknown pull is successful only when the requested ref is actually present.
 func (e *Executor) ReconcileImage(ctx context.Context, taskID string, intent protocol.TaskIntent) (taskjournal.Snapshot, error) {
 	task, err := e.journal.Get(ctx, taskID)
 	if err != nil || task.Status != taskstate.Unknown || task.Action != string(intent.Action) || !isImageAction(intent.Action) ||

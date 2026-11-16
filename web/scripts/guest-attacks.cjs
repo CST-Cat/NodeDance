@@ -1,5 +1,3 @@
-// Bounded adversarial requests from the actual guest Chromium page. All targets
-// belong to the temporary fixture; no production server or real Agent is used.
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),http=require('node:http')
 module.exports=async function attack({base,page,visitor,admin,headers,current,identity,probe,stopReporting,artifacts}){
  const results=[],record=(name,ok,detail)=>{results.push({name,ok,detail});if(!ok)console.error('FINDING',name,detail)}
@@ -42,12 +40,10 @@ module.exports=async function attack({base,page,visitor,admin,headers,current,id
  console.log('GUEST SECURITY: private operations',privateOperations.length)
  for(let i=0;i<privateOperations.length;i+=8){await Promise.all(privateOperations.slice(i,i+8).map(async o=>{const r=await browserRequest(target(o),o.method,payload,hostileHeaders);record('catalog:'+o.name,r.status===401,{status:r.status})}))}
 
- // Core runtime metadata and the shared memo are never part of public projection.
  const savedMemo=await(await admin.request.get(base+'/api/v1/dashboard/memo')).json()
  const memoWrite=await admin.request.put(base+'/api/v1/dashboard/memo',{headers,data:{content:'PRIVATE-OVERVIEW-MEMO <script>window.__memoLeak=1</script>',revision:savedMemo.revision}})
  assert.equal(memoWrite.status(),200)
  for(const actor of [page.context(),admin]){const name=actor===admin?'administrator':'guest';const response=await actor.request.get(base+'/api/v1/public/guest/display');const body=await response.text();record('overview-memo-private:'+name,response.status()===200&&!body.includes('PRIVATE-OVERVIEW-MEMO')&&!body.includes('kernelVersion')&&!body.includes('environment'),{status:response.status()});const forged=await actor.request.get(base+'/api/v1/public/guest/display?memo=true&core=true');record('overview-query-rejected:'+name,forged.status()===400,{status:forged.status()})}
- // Enrollment token-bearing installation commands remain private.
  const enrollment=await admin.request.post(base+'/api/v1/agents/enrollments',{headers,data:{displayName:'PRIVATE INSTALL NAME',coreUrl:base,deploymentMethod:'docker',asset:{price:98765.4321,currency:'JPY',billingCycleUnit:'minute',billingCycleDays:30,purchasedAt:'2098-04-03T00:00:00Z',expiresAt:'2099-05-06T07:08:00Z',expiryNoticeDays:7,trafficLimitBytes:1234567890123,trafficAccounting:'sum',trafficWarningPercent:90}}})
  assert.equal(enrollment.status(),201);const install=await enrollment.json()
  for(const command of [install.nativeInstallCommand,install.dockerInstallCommand])assert.ok(command.includes('--token '+install.token))
@@ -56,7 +52,6 @@ module.exports=async function attack({base,page,visitor,admin,headers,current,id
  record('private-install-command-projection',projection.status===200&&!projection.body.includes(install.token)&&!projection.body.includes('PRIVATE INSTALL NAME'))
  const assetPath=catalog.operations.find(o=>o.name==='nodes.asset').path.replace('{nodeId}',install.nodeId)
  const savedAsset=await admin.request.get(base+assetPath);assert.equal(savedAsset.status(),200);assert.equal((await savedAsset.json()).billingCycleUnit,'minute')
- // Currency values outside the contract enum are rejected by Core validation.
  const catalogEnrollment=catalog.operations.find(o=>o.name==='agents.enrollment');assert.ok(catalogEnrollment?.bodySchema?.properties?.asset?.properties?.currency?.enum)
  const forgedCurrency=await admin.request.post(base+'/api/v1/agents/enrollments',{headers,data:{displayName:'FORGED CURRENCY',coreUrl:base,deploymentMethod:'docker',asset:{price:1,currency:'PRIVBILL',billingCycleUnit:'month',billingCycleDays:30,trafficAccounting:'sum'}}})
  record('forged-currency-rejected',forgedCurrency.status()===400,{status:forgedCurrency.status()})
@@ -77,7 +72,6 @@ module.exports=async function attack({base,page,visitor,admin,headers,current,id
  const deleteChannel=await admin.request.delete(base+'/api/v1/alerts/channels/'+savedChannel.id,{headers,data:{revision:savedChannel.revision,confirm:true}});assert.equal(deleteChannel.status(),204)
  const anonymousInstall=await browserRequest('/api/v1/agents/enrollments','POST',{displayName:'forged-install',coreUrl:base},hostileHeaders)
  record('private-install-command-anonymous',anonymousInstall.status===401)
- // Private RSS subscriptions never enter guest projections, even with admin cookies.
  const rss=await admin.request.post(base+'/api/v1/feeds',{headers,data:{name:'PRIVATE RSS NAME',url:'https://example.invalid/feed?token=RSS_PRIVATE_TOKEN',enabled:false,keywords:[],channelIds:[],notificationMode:'off'}})
  assert.equal(rss.status(),200);const subscription=await rss.json()
  for(const suffix of ['', '/'+subscription.id, '/'+subscription.id+'/items', '/'+subscription.id+'/deliveries']){const r=await browserRequest('/api/v1/feeds'+suffix);record('private-RSS:'+suffix,r.status===401,{status:r.status})}
@@ -123,34 +117,28 @@ module.exports=async function attack({base,page,visitor,admin,headers,current,id
   const forgedTask={Authorization:'Task '+'f'.repeat(64),'X-NodeDance-Stream':values.streamId,'X-NodeDance-Task':'ndt_'+'f'.repeat(32),'X-NodeDance-Node':identity.nodeId,'X-NodeDance-Direction':'sender','X-NodeDance-Binding':'f'.repeat(64)}
   for(const [actorName,actor] of [['guest',visitor],['administrator',admin]])for(const target of fileSockets){const r=await actor.request.get(base+target,{headers:forgedTask});record('file-websocket-forged-task:'+actorName+':'+target,r.status()===401,{status:r.status()})}
  }finally{await fileSocketPage.close()}
- // Real browser HTML-form CSRF from another origin, using administrator cookies.
  const cross=http.createServer((req,res)=>{res.setHeader('Content-Type','text/html');res.end('<!doctype html><title>Foreign origin</title>')});await new Promise(r=>cross.listen(0,'127.0.0.1',r))
  const crossPage=await admin.newPage();try{await crossPage.goto('http://127.0.0.1:'+cross.address().port);const response=crossPage.waitForResponse(r=>r.url()===base+'/api/v1/updates/apply');await crossPage.evaluate(url=>{const form=document.createElement('form');form.method='POST';form.action=url;document.body.append(form);form.submit()},base+'/api/v1/updates/apply');record('cross-origin-form-CSRF',(await response).status()===403,{status:(await response).status()})}finally{void crossPage.close().catch(()=>{});cross.close();cross.closeAllConnections()}
  console.log('GUEST SECURITY: injection and cache withdrawal')
- // Browser-side stored HTML/script injection in every public alias/title.
  let policy=current;const save=async overrides=>{const r=await admin.request.put(base+'/api/v1/guest/settings',{headers,data:{...policy,...overrides}});if(r.ok())policy=await r.json();return r}
  const evil='<img src=/guest-attack-beacon onerror=window.__guestXss=1>'
  const injected=await save({title:evil,nodes:[{id:identity.nodeId,name:evil}],probes:[{id:probe.id,name:evil}]});assert.equal(injected.status(),200)
  await page.evaluate(()=>{window.__guestXss=0});await page.locator('[data-testid=guest-display]').getByRole('button',{name:'Refresh',exact:true}).click();await page.waitForFunction(evil=>document.querySelector('[data-testid=guest-display] h1')?.textContent===evil,evil)
  const xss=await page.evaluate(()=>({executed:window.__guestXss,images:document.querySelectorAll('[data-testid=guest-display] img').length}));record('stored-title-node-service-XSS',xss.executed===0&&xss.images===0,xss)
  assert.equal((await save({title:current.title,nodes:current.nodes,probes:current.probes})).status(),200)
- // Read storm is bounded and all responses must retain the exact selected scope.
  const burst=page.evaluate(async()=>{const responses=[];for(let wave=0;wave<10;wave++)responses.push(...await Promise.all(Array.from({length:24},async()=>{const r=await fetch('/api/v1/public/guest/display',{cache:'no-store'});return {status:r.status,text:await r.text()}})));return responses})
  const start=Date.now(),management=await admin.request.get(base+'/api/v1/guest/settings');record('management-during-guest-storm',management.status()===200&&Date.now()-start<2000,{status:management.status(),ms:Date.now()-start})
  const burstResults=await burst;for(let i=0;i<burstResults.length;i++){const r=burstResults[i];record('burst:'+i,[200,503].includes(r.status)&&!r.text.includes('PRIVATE HOST NAME')&&!r.text.includes('memory.used_percent'),{status:r.status})}
- // Subsequent reads after a policy change must stop returning removed fields.
  assert.equal((await save({metrics:['memory.used_percent'],historyHours:0})).status(),200)
  const changed=await browserRequest('/api/v1/public/guest/display');record('warm-cache-field-withdrawal',changed.status===200&&!changed.body.includes('cpu.usage_percent')&&changed.body.includes('memory.used_percent'),{status:changed.status})
  assert.equal((await save({metrics:current.metrics,historyHours:current.historyHours})).status(),200)
  await browserRequest('/api/v1/public/guest/display')
- // Withdraw a real probe and revoke the protocol fixture after warming the cache.
  const deleted=await admin.request.delete(base+'/api/v1/probes/'+probe.id+'?revision='+probe.revision,{headers});assert.equal(deleted.status(),204)
  policy=(await(await admin.request.get(base+'/api/v1/guest/settings')).json()).settings;assert.ok(!policy.probes.some(p=>p.id===probe.id),'Deleting a probe removes its saved publication');
  const afterDelete=await browserRequest('/api/v1/public/guest/display');record('warm-cache-deleted-probe',afterDelete.status===200&&!JSON.parse(afterDelete.body).probes.some(p=>p.name==='Public service'),{status:afterDelete.status,probes:JSON.parse(afterDelete.body).probes.length})
  await stopReporting();const revoked=await admin.request.post(base+'/api/v1/agents/'+identity.agentId+'/revoke',{headers});assert.equal(revoked.status(),200)
  policy=(await(await admin.request.get(base+'/api/v1/guest/settings')).json()).settings;assert.ok(!policy.nodes.some(n=>n.id===identity.nodeId),'Revocation removes the saved node publication');
  const afterRevoke=await browserRequest('/api/v1/public/guest/display');record('warm-cache-revoked-node',afterRevoke.status===200&&JSON.parse(afterRevoke.body).nodes.length===0,{status:afterRevoke.status,nodes:JSON.parse(afterRevoke.body).nodes.length})
- // A deleted node must disappear immediately even with a warmed public cache.
  const fresh=await admin.request.post(base+'/api/v1/agents/enrollments',{headers,data:{displayName:'Deletion fixture',coreUrl:base}});assert.equal(fresh.status(),201)
  const candidate=await fresh.json()
  const enrolled=await admin.request.post(base+'/api/v1/agents/enroll',{headers:{Origin:base,Authorization:'Enrollment '+candidate.token},data:{credential:'d'.repeat(64),requestId:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'}});assert.equal(enrolled.status(),201)

@@ -1,4 +1,3 @@
-// Exercise the actual installed Radix/UIArc controls rather than hidden form inputs.
 async function selectValue(control,value){
  const page=control.page();await control.click();const option=page.locator('[role=menuitemradio][data-option-value='+JSON.stringify(String(value))+']');await option.click();await option.waitFor({state:"detached"});
 }

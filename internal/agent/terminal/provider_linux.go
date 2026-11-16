@@ -64,9 +64,6 @@ func (p *SystemProvider) Open(ctx context.Context, request protocol.TerminalFram
 		if err != nil || inspect.Container.ID != request.ContainerID || inspect.Container.State == nil || !inspect.Container.State.Running {
 			return nil, errors.New("target container is unavailable or not running")
 		}
-		// Docker Agent enters the host mount namespace through an open image
-		// executable. Its original pathname need not exist on the host. The
-		// running process's executable inode is the authoritative child binary.
 		executable := fmt.Sprintf("/proc/%d/exe", os.Getpid())
 		capabilities, _ := json.Marshal(request.Capabilities)
 		args = []string{executable, "terminal-container", request.ContainerID, string(capabilities)}
@@ -91,7 +88,6 @@ func (p *SystemProvider) Open(ctx context.Context, request protocol.TerminalFram
 	return newTmuxEndpoint(ctx, p.directory, p.socketDirectory, terminalEnvironment(p.shell, request.Capabilities), request, args)
 }
 
-// Close is called only after the manager has terminated all its tmux servers.
 func (p *SystemProvider) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -189,11 +185,6 @@ func (p *SystemProvider) openContainer(ctx, attachCtx context.Context, request p
 }
 
 func waitForContainerExecStart(ctx context.Context, cli *client.Client, execID string) error {
-	// Docker can briefly report an Exec as running while the runtime is still
-	// resolving its executable. In particular, an Exec for /bin/sh in a
-	// shell-less image may transition through Running before exiting with 127.
-	// Require a short continuous-running window so callers do not get a ready
-	// terminal for a process that has already failed to start.
 	const startupGrace = 100 * time.Millisecond
 	deadline := time.NewTimer(time.Second)
 	defer deadline.Stop()
@@ -262,9 +253,6 @@ func (e *containerEndpoint) ExitCode() *int {
 func (e *containerEndpoint) Close() error {
 	var closeErr error
 	e.closeOnce.Do(func() {
-		// Interrupt the foreground process first, then send a fixed exit line to
-		// the interactive shell. Closing a hijacked Docker stream alone does not
-		// guarantee the Engine terminates an attached Exec process.
 		_ = e.response.Conn.SetWriteDeadline(time.Now().Add(time.Second))
 		_, _ = e.response.Conn.Write([]byte{3})
 		_, _ = e.response.Conn.Write([]byte("exit\r"))

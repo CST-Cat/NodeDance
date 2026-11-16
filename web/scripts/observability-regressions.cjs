@@ -1,6 +1,4 @@
 const {setBrowserLanguage}=require('./browser-language.cjs')
-// Diagnostics add square cards using the original metric-card styling. Telemetry is
-// a protocol fixture on an isolated Core; no real host is touched.
 const assert=require('node:assert/strict'),path=require('node:path')
 module.exports=async function({page,base,node,artifacts,catalog,view,publish}){
  const routePath=name=>{const o=catalog.operations.find(o=>o.name===name);assert.ok(o,`Missing discovered operation ${name}`);return o.path.replace('{nodeId}',node)}

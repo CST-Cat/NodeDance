@@ -565,9 +565,6 @@ func (s *Store) Evaluate(ctx context.Context, samples []Sample) error {
 			if err := s.suppressChild(ctx, tx, rule, now); err != nil {
 				return err
 			}
-			// Samples collected before the node went offline are no longer a valid
-			// continuous duration window. Do not fire immediately from an old high
-			// value when the node comes back.
 			if err := resetRuleState(ctx, tx, rule.ID, rule.SubjectID); err != nil {
 				return err
 			}
@@ -1213,8 +1210,6 @@ func (s *Store) ClaimDelivery(ctx context.Context, now time.Time) (Delivery, Cha
 	}
 	secret, e := s.open(sealed)
 	if e != nil {
-		// A changed/lost key must not leave this delivery in a permanent queued
-		// loop. Preserve the failure in history, without exposing crypto details.
 		return failClaim("notification channel secret cannot be decrypted")
 	}
 	if e = tx.Commit(); e != nil {
@@ -1296,8 +1291,6 @@ func (s *Store) ListDeliveries(ctx context.Context, limit int) ([]Delivery, erro
 	return out, rows.Err()
 }
 
-// NotificationChannel returns a currently enabled channel and its decrypted secret
-// for Core-owned notification producers. It is never exposed through an API.
 func (s *Store) NotificationChannel(ctx context.Context, id string) (Channel, string, error) {
 	c, e := s.GetChannel(ctx, id)
 	if e != nil {

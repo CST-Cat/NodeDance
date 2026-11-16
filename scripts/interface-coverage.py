@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Generate/check interface coverage from the shared Core and terminal catalogues."""
 import argparse
 import json
 import pathlib
@@ -40,8 +39,6 @@ lines += ['', f'## Local maintenance and terminal workflows ({len(local)})', '',
 for operation in sorted(local, key=lambda operation: operation['name']):
     lines.append(f"| `{operation['name']}` | shared local dispatch | local host operation; no remote Web privilege |")
 lines += ['', '## Behavioral verification / 行为验证', '',
-          '- `go test ./...`: catalogue isolation, real Core auth/schema/PNG upload/empty preference/script bounds, '
-          'terminal client, shared file cleanup and completion observation, CLI and PTY TUI.',
           '- `pnpm --dir web typecheck`: schema-driven input, upload contract, completion references and stable request intents.',
           '- `pnpm --dir web audit:interfaces`: isolated real Core and browser regression checks; no Agent/root execution.',
           '- Rootful Docker/Agent/update side effects use the existing opt-in integration environments.', '']

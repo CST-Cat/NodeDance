@@ -1,6 +1,3 @@
-// Package taskjournal persists Agent task intent and verified results.
-// It does not execute tasks; callers must durably BeginExecution before
-// invoking any executor.
 package taskjournal
 
 import (
@@ -93,9 +90,6 @@ const (
 	ExecutionPhaseResultPersisted        ExecutionPhase = "result_persisted"
 )
 
-// ExecutionBaseline contains only the sanitized Docker facts needed to
-// reconcile a lifecycle operation after an Agent crash. It intentionally has
-// no raw Inspect payload, labels, environment, command, or error text.
 type ExecutionBaseline struct {
 	TargetID     string
 	Action       string
@@ -133,8 +127,6 @@ const (
 	ResultUncertain ResultCode = "result_pending"
 )
 
-// Result intentionally carries only typed, bounded state. It has no freeform
-// error, command, or request-body field that could persist credentials.
 type Result struct {
 	Code             ResultCode
 	ObservedState    string
@@ -146,10 +138,6 @@ type LogChunk struct {
 	Redacted bool
 }
 
-// Open creates or opens one node's Agent-owned journal database at databasePath.
-// Its dedicated parent directory must be current-user-owned mode 0700. A
-// kernel flock on the database file provides single-process ownership and is
-// released automatically when a process exits or is killed.
 func Open(ctx context.Context, databasePath, nodeID string) (*Store, error) {
 	if strings.TrimSpace(databasePath) == "" {
 		return nil, errors.New("task journal path is empty")
@@ -478,9 +466,6 @@ func (s *Store) Close() error {
 	return dbErr
 }
 
-// JournalID is a random, durable identity for this node's journal contents.
-// Core can use it to distinguish the same task database after reconnect from
-// an empty/recreated journal whose execution history was lost.
 func (s *Store) JournalID() string {
 	if s == nil {
 		return ""
@@ -488,15 +473,10 @@ func (s *Store) JournalID() string {
 	return s.journalID
 }
 
-// Enqueue commits the safe request summary and deduplication digest before a
-// caller can dispatch it. Payload is hashed but never written to SQLite.
 func (s *Store) Enqueue(ctx context.Context, identity taskstate.Identity) (EnqueueResult, error) {
 	return s.enqueue(ctx, identity, false)
 }
 
-// EnqueueDelivered atomically records that this durable journal received a
-// task which Core had committed for delivery. The marker is local recovery
-// evidence only; it is never included in an Agent report as Core-owned proof.
 func (s *Store) EnqueueDelivered(ctx context.Context, identity taskstate.Identity) (EnqueueResult, error) {
 	return s.enqueue(ctx, identity, true)
 }
@@ -594,8 +574,6 @@ func (s *Store) enqueue(ctx context.Context, identity taskstate.Identity, delive
 	return EnqueueResult{Task: snapshot, Created: true}, nil
 }
 
-// BeginExecution must complete before the caller crosses into its executor.
-// If its process stops after this commit, recovery changes the task to unknown.
 func (s *Store) BeginExecution(ctx context.Context, taskID string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -620,10 +598,6 @@ func (s *Store) BeginExecution(ctx context.Context, taskID string) error {
 	return tx.Commit()
 }
 
-// PrepareMutation durably binds a sanitized preflight observation to a running
-// task before the caller may issue its Docker write. The persisted phase means
-// a mutation may have started after this commit; it does not claim that an
-// Engine request was sent or completed.
 func (s *Store) PrepareMutation(ctx context.Context, taskID string, baseline ExecutionBaseline) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -753,8 +727,6 @@ func (s *Store) AppendLog(ctx context.Context, taskID string, chunk LogChunk) (b
 	return truncated != 0, nil
 }
 
-// Finish applies a proof-checked transition. Unknown is intentionally excluded:
-// use MarkUnknown or RecoverInterrupted, then reconcile against the real Engine.
 func (s *Store) Finish(ctx context.Context, taskID string, status taskstate.Status, evidence taskstate.Evidence, result Result) error {
 	if !taskstate.IsTerminal(status) {
 		return fmt.Errorf("%w: Finish requires a terminal status", taskstate.ErrInvalidStatus)
@@ -824,10 +796,6 @@ func (s *Store) MarkUnknownWithResult(ctx context.Context, taskID string, result
 
 const maxComposeConfigBackupBytes = 2 << 20
 
-// StoreComposeConfigBaselineIfAbsent keeps the last source files that were in
-// place before an un-deployed edit. The journal lives in the Agent's private
-// data directory; callers clear this baseline only after a deployment is
-// verified or the previous service definition has been restored.
 func (s *Store) StoreComposeConfigBaselineIfAbsent(ctx context.Context, projectKey string, files [][]byte) (bool, error) {
 	if !validJournalComposeProjectKey(projectKey) || len(files) == 0 || len(files) > 16 {
 		return false, ErrInvalidResult
@@ -950,10 +918,6 @@ func validComposeRecoveryCode(value string) bool {
 	return true
 }
 
-// RecoverInterrupted must be called only after the old Agent process is known
-// to be stopped. It never replays work: all queued and running tasks become
-// unknown, and their resource claims stay held until actual Engine state is
-// queried and confirmed.
 func (s *Store) RecoverInterrupted(ctx context.Context) (int64, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -974,11 +938,6 @@ func (s *Store) RecoverInterrupted(ctx context.Context) (int64, error) {
 	return count, nil
 }
 
-// SnapshotAll reads one bounded, consistent SQLite read snapshot. It does not
-// page a changing live table with LIMIT/OFFSET: callers receive a frozen
-// in-memory candidate and may split it into wire pages only after this method
-// completes. On any limit, deadline, decode, or commit error it returns no
-// partial snapshot, so absence is never inferred from incomplete history.
 func (s *Store) SnapshotAll(ctx context.Context) ([]Snapshot, error) {
 	bounded, cancel := context.WithTimeout(ctx, JournalSnapshotTimeout)
 	defer cancel()
@@ -1234,5 +1193,4 @@ func boolInt(value bool) int {
 	return 0
 }
 
-// Schema returns the current durable Agent task journal contract.
 func Schema() string { return schemaSQL }

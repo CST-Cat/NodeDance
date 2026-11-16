@@ -120,8 +120,6 @@ func assetSamples(node, name string, a protocol.NodeAsset, h *protocol.MetricsHo
 	return []corealerts.Sample{expiry, traffic}
 }
 
-// seedNodeLineType stores an Agent-detected line type on a freshly enrolled
-// node without overwriting a label an operator may already have set.
 func (s *Server) seedNodeLineType(ctx context.Context, node, lineType string) {
 	if !protocol.ValidNodeLineType(lineType) || lineType == "" {
 		return

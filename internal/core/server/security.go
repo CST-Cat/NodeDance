@@ -77,8 +77,6 @@ func loadOrCreateSigningKey(dataDir string) ([]byte, error) {
 	if err := tmp.Close(); err != nil {
 		return nil, fmt.Errorf("close CSRF signing key: %w", err)
 	}
-	// link is an atomic create-if-absent installation: a concurrent Core start
-	// may win, but this process never replaces the key already in use.
 	if err := os.Link(tmpName, path); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return loadOrCreateSigningKey(dataDir)

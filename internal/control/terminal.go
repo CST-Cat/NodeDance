@@ -12,8 +12,6 @@ import (
 	"github.com/coder/websocket"
 )
 
-// OpenTerminal combines single-use authorization and opening the selected
-// host/container shell. Both human TUI and automation use this sequence.
 func (c *Client) OpenTerminal(ctx context.Context, in Input, rows, columns uint16) (*TerminalSession, string, error) {
 	catalog, err := c.Catalog(ctx)
 	if err != nil {
@@ -40,7 +38,6 @@ func (c *Client) OpenTerminal(ctx context.Context, in Input, rows, columns uint1
 	}
 	conn, err := c.Connect(ctx, connect, Input{Query: map[string]string{"ticket": authorized.Ticket}})
 	if err != nil {
-		// A failed dial must not leave a pending Agent terminal consuming a slot.
 		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		cancelOp, _ := FindIn(catalog, "terminal.cancel")
@@ -69,8 +66,6 @@ func SendTerminal(ctx context.Context, conn interface {
 	return conn.Write(writeCtx, websocket.MessageText, raw)
 }
 
-// ResumeTerminal obtains a new single-use, session-bound ticket without opening
-// another shell or replaying any input.
 func (c *Client) ResumeTerminal(ctx context.Context, nodeID, streamID string) (*websocket.Conn, error) {
 	catalog, err := c.Catalog(ctx)
 	if err != nil {
@@ -103,16 +98,12 @@ func (c *Client) ResumeTerminal(ctx context.Context, nodeID, streamID string) (*
 
 var errTerminalUnavailable = errors.New("terminal session is no longer available")
 
-// StreamConnection is shared by generic streams and resumable terminal streams.
 type StreamConnection interface {
 	Read(context.Context) (websocket.MessageType, []byte, error)
 	Write(context.Context, websocket.MessageType, []byte) error
 	CloseNow() error
 }
 
-// TerminalSession reattaches the same tmux session through a fresh transport.
-// Input is never queued or replayed: a dropped keystroke is safer than running
-// an uncertain command twice after reconnecting.
 type TerminalSession struct {
 	mu               sync.Mutex
 	conn             *websocket.Conn

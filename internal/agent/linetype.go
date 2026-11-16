@@ -8,17 +8,10 @@ import (
 	"strings"
 )
 
-// DetectLineType classifies the node's line type at enrollment time using only
-// what the machine itself can know: homelab for desktop chassis or wireless
-// machines, nat for container virtualization, kvm only when an interface
-// carries a public address (a dedicated line). Anything else stays unlabeled —
-// a VM behind provider NAT cannot be told apart from a shared-NAT VPS from
-// inside, so guessing kvm from DMI alone would mislabel NAT VPSes.
 func DetectLineType() string {
 	return classifyLineType(readDMI(), detectVirt(), hasWirelessInterface(), hasPublicInterfaceAddress())
 }
 
-// classifyLineType is the pure decision core behind DetectLineType.
 func classifyLineType(dmi dmiInfo, virt string, wireless, publicNIC bool) string {
 	switch firstChassisType(dmi.chassisType) {
 	case "3", "4", "6", "7", "8", "9", "10", "11", "13", "30", "31", "32":
@@ -49,7 +42,6 @@ func firstChassisType(value string) string {
 	return ""
 }
 
-// detectVirt asks systemd-detect-virt first and falls back to /proc/vz.
 func detectVirt() string {
 	if out, err := exec.Command("systemd-detect-virt", "--container").Output(); err == nil {
 		return strings.TrimSpace(string(out))
@@ -98,8 +90,6 @@ func hasWirelessInterface() bool {
 	return false
 }
 
-// hasPublicInterfaceAddress reports whether any interface holds a global
-// unicast address — the dedicated-line signal.
 func hasPublicInterfaceAddress() bool {
 	interfaces, err := net.Interfaces()
 	if err != nil {
@@ -127,9 +117,6 @@ func hasPublicInterfaceAddress() bool {
 	return false
 }
 
-// dedicatedLineExclusions are non-global ranges the generic unicast checks
-// above do not cover: shared CGNAT, benchmarking and the documentation blocks.
-// Addresses from these ranges never prove a dedicated line.
 var dedicatedLineExclusions = []netip.Prefix{
 	netip.MustParsePrefix("100.64.0.0/10"),
 	netip.MustParsePrefix("192.0.2.0/24"),
@@ -139,8 +126,6 @@ var dedicatedLineExclusions = []netip.Prefix{
 	netip.MustParsePrefix("2001:db8::/32"),
 }
 
-// isDedicatedLineAddress reports whether the address proves a dedicated line:
-// global unicast outside the private, shared-CGNAT and documentation ranges.
 func isDedicatedLineAddress(ip netip.Addr) bool {
 	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsMulticast() || ip.IsUnspecified() || ip.IsPrivate() {
 		return false

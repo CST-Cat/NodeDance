@@ -1,5 +1,3 @@
-// Package update owns release selection and transactional Core/Agent updates.
-// Clients submit these same requests through the Core operation contract.
 package update
 
 import (
@@ -102,7 +100,6 @@ type Job struct {
 	IdempotencyKey  string     `json:"-"`
 }
 
-// Journal embeds public state and durable recovery details without exposing host paths.
 type journal struct {
 	AgentGeneration uint64
 	Job

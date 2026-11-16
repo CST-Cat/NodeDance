@@ -26,8 +26,6 @@ function cachedSeries<T>(build: (keys: string[]) => T) {
   };
 }
 
-// Core owns persistence. Keep only the currently displayed four-hour response;
-// never reconstruct history from browser sessions or bridge missing buckets.
 export function recentHistory(nodeId: () => string) {
   const history = cell<MetricHistory | null>(null);
   const range = cell({from: Date.now() - WINDOW, to: Date.now()});

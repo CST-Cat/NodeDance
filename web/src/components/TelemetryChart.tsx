@@ -15,7 +15,6 @@ export default function TelemetryChart({points, labels, label, description, empt
       if (value == null || !Number.isFinite(value) || value < 0) { active = false; return; }
       const [x, y] = position(point.at, value);
       d += `${active ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)} `;
-      // Mark isolated samples so a single real reading never becomes a fake curve.
       if (!active && (points[pointIndex + 1]?.values[index] == null)) dots.push({x, y});
       active = true;
     });

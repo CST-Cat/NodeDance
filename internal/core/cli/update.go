@@ -29,8 +29,6 @@ func updateUsesRemote(args []string, lookup LookupEnv) bool {
 	return remote
 }
 
-// Local updates use the built-in maintenance executor; explicit remote targets
-// use the connected Core operation contract.
 func runUpdate(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reader, stdout, stderr io.Writer) error {
 	if !updateUsesRemote(args, lookup) {
 		return update.Local(ctx, "core", "/var/lib/nodedance", args, stdin, stdout, stderr)

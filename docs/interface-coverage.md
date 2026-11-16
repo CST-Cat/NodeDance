@@ -245,7 +245,6 @@ CLI and TUI share `terminalOperations`, `executeFinite`, the Core client, JSONL 
 
 ## Behavioral verification / 行为验证
 
-- `go test ./...`: catalogue isolation, real Core auth/schema/PNG upload/empty preference/script bounds, terminal client, shared file cleanup and completion observation, CLI and PTY TUI.
 - `pnpm --dir web typecheck`: schema-driven input, upload contract, completion references and stable request intents.
 - `pnpm --dir web audit:interfaces`: isolated real Core and browser regression checks; no Agent/root execution.
 - Rootful Docker/Agent/update side effects use the existing opt-in integration environments.

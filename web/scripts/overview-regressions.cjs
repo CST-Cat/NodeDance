@@ -1,7 +1,6 @@
 const {setBrowserLanguage}=require('./browser-language.cjs')
 const assert=require('node:assert/strict'),path=require('node:path')
 module.exports=async function({context,base,node,headers,artifacts,catalog}){
- // Metric routes below simulate presentation only; persistence and authorization use the isolated real Core.
  const page=await context.newPage();page.setDefaultTimeout(10000);const errors=[];page.on('pageerror',e=>errors.push(e.message))
  await page.addInitScript(()=>Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{window.__overviewCopied=text}}}))
  const originalAppearance=await(await context.request.get(base+'/api/v1/public/appearance')).json()

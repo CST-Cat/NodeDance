@@ -1,18 +1,12 @@
-/* Tailwind v4 utilities only: preserve the product's existing reset and tokens.
-   Disable automatic source detection so vendor assets and audit fixtures cannot
-   introduce utilities; scan only application source. */
 @layer theme, base, components, utilities;
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities) source(none);
 @import "tailwindcss-concentric";
 @source "./";
-/* UIArc is CSS Modules based; do not generate utilities from vendor source. */
 @source not "./components/arc";
-/* Opt in only the installed Tabs selection utility; preserve vendor exclusion. */
 @source inline("rounded-(--tabs-radius) rounded-concentric-[var(--tabs-selection-inset)] rounded-(--radius-panel) rounded-concentric-[4px]");
 @import "./fonts.css";
 @import "./figma-tokens.css";
-/* Product roles are mapped to the user-selected Claude Figma kit. */
 :root {
   --radius-control: 8px;
   --radius-card: 12px;
@@ -106,20 +100,12 @@
   --button-hover: #131313;
   --surface-hover: #e7e6e1;
   --overlay-shadow: 0 8px 24px #1414131a;
-  /* Floating-surface contract. Translucent borders fade on rounded corners
-     (the arc reads as "eaten away"), so every floating surface — dialogs,
-     native dialogs inside the file finder, the finder container itself —
-     consumes the same opaque edge, rim and layered shadow. Surfaces only
-     consume these three tokens; no per-component shadow stacks. */
   --overlay-edge: #b9b6ae;
   --overlay-rim: rgba(20, 20, 19, 0.08);
   --overlay-lift: 0 0 0 1px var(--overlay-rim), 0 1px 2px rgba(20, 20, 19, 0.14),
     var(--overlay-shadow);
   --scrollbar-thumb: #c9c6bd;
   --scrollbar-thumb-idle: #dedcd4;
-  /* Motion curves shared with the Open Claude UI preset kit; defined at the
-     root so controls outside the .ux block (press feedback, stream jump)
-     resolve them. */
   --ux-ease: cubic-bezier(0.16, 1, 0.3, 1);
   --ux-spring: cubic-bezier(0.34, 1.3, 0.64, 1);
   color-scheme: light;
@@ -1359,8 +1345,6 @@ summary:focus-visible:not(:where(.registry-controls, .registry-controls *)) {
   background: transparent;
   cursor: pointer;
 }
-/* Burger → X morph. Three bars rotate/translate into a cross while the
-   middle bar fades; 0.2s on the shared overlay easing. */
 .nav-burger {
   display: grid;
   gap: 5px;
@@ -1389,8 +1373,6 @@ summary:focus-visible:not(:where(.registry-controls, .registry-controls *)) {
   background: transparent;
   border-color: transparent;
 }
-/* Tap/keyboard focus draws no box around the burger; the morphing icon is
-   the state indicator, and a box would read as a misdrawn frame. */
 .app-shell[data-theme] .navigation-toggle:focus-visible {
   outline: none;
 }
@@ -1563,7 +1545,6 @@ textarea:not(:where(.registry-controls, .registry-controls *)) {
   .app-shell[data-authenticated="true"] {
     padding: 0 24px 32px;
   }
-  /* Keep the toggle above the full-screen menu so its X stays clickable. */
   .topbar {
     z-index: 21;
   }
@@ -1668,7 +1649,6 @@ textarea:not(:where(.registry-controls, .registry-controls *)) {
   overflow-wrap: anywhere;
 }
 
-/* Theme all browser interaction defaults using the DESIGN.md palette. */
 .app-shell a,
 .app-shell a:visited {
   color: var(--accent);
@@ -1690,7 +1670,6 @@ textarea:not(:where(.registry-controls, .registry-controls *)) {
   accent-color: var(--selection);
 }
 
-/* Shared states apply to specialized screens as well as generic operations. */
 .app-shell h1 {
   color: var(--ink);
   font-family: var(--display-font);
@@ -1704,9 +1683,6 @@ textarea:not(:where(.registry-controls, .registry-controls *)) {
     background-color 0.15s linear,
     border-color 0.15s linear,
     color 0.15s linear,
-    /* Restrained spring press feedback (OpenUI CdsMotionEngine pill
-       pattern): settle through --ux-spring. Transform only ever applies to
-       pressed buttons, so shared controls keep their color easing. */
     transform 0.18s var(--ux-spring);
 }
 .app-shell :is(input, textarea, select):focus-visible:not(:where(.registry-controls, .registry-controls *)) {
@@ -1832,7 +1808,6 @@ textarea:not(:where(.registry-controls, .registry-controls *)) {
 .workspace-account {
   padding-top: 20px;
 }
-/* The node workspace uses the same sidebar width, collapse and mobile drawer. */
 .sidebar-context {
   min-width: 0;
   flex-shrink: 0;
@@ -1869,7 +1844,6 @@ textarea:not(:where(.registry-controls, .registry-controls *)) {
   }
 }
 
-/* Lucian UX/UI Prompt #031 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#031 */
 .ux {
   --ux-page: var(--canvas);
   --ux-surface: var(--surface-soft);
@@ -1884,7 +1858,6 @@ textarea:not(:where(.registry-controls, .registry-controls *)) {
   font-family: inherit;
   box-sizing: border-box;
 }
-/* Lucian UX/UI Prompt #040 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#040 */
 @media (min-width: 901px) {
   .workspace-sidebar {
     transition: width 0.5s cubic-bezier(0.34, 1.3, 0.64, 1);
@@ -1909,8 +1882,6 @@ textarea:not(:where(.registry-controls, .registry-controls *)) {
   transition: none !important;
 }
 
-/* Open Claude UI ScrollFadeContainer mask (7-stop nonlinear alpha ramp; the
-   custom properties are measured per panel by src/scroll-edge.ts). */
 .scroll-fade {
   --scroll-fade-size: 28px;
   --scroll-fade-top: 0px;
@@ -1955,11 +1926,6 @@ textarea:not(:where(.registry-controls, .registry-controls *)) {
   );
 }
 
-/* Touch hit-target compensation ported from the OpenUI ChatComposerChin
-   data-touch-size growth: the visible control keeps its size while a
-   pointer-transparent ::after extends the actionable area to 44px.
-   Width can opt out via --touch-target-inline when a wide-but-short row of
-   header icons must not grow into neighbours. */
 .touch-target {
   position: relative;
 }
@@ -1974,7 +1940,6 @@ textarea:not(:where(.registry-controls, .registry-controls *)) {
   pointer-events: auto;
 }
 
-/* Lucian UX/UI Prompt #031 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#031 */
 .app-shell
   :is(
     input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not(
@@ -2037,7 +2002,6 @@ textarea:not(:where(.registry-controls, .registry-controls *)) {
   font-variant-numeric: tabular-nums;
 }
 
-/* Page layout and typography are shared; resource rows own their local grouping. */
 .app-shell[data-authenticated="true"] .workspace-page {
   width: min(1320px, 100%);
   max-width: 1320px;
@@ -2145,7 +2109,6 @@ textarea:not(:where(.registry-controls, .registry-controls *)) {
   .secure-badge { white-space:normal; }
 }
 
-/* Read-only presentation; Core enforces permissions for every operation. */
 .app-shell[data-role="viewer"] :is(
   .vps-card-actions, .vps-card-shortcuts, .node-management-actions,
   .node-terminal-entry, .nodes-dashboard .primary-button,
@@ -2154,16 +2117,10 @@ textarea:not(:where(.registry-controls, .registry-controls *)) {
   display: none;
 }
 
-/* Shared headers wrap within their panel, retaining every label and action. */
 .ui-responsive-header { flex-wrap: wrap; min-width: 0; }
 .ui-responsive-header > :first-child { min-width: 0; overflow-wrap: anywhere; }
 .ui-responsive-header :is(h2, h3) { overflow-wrap: anywhere; }
 
-/* =============================================================================
-   Mobile navigation follows the fetched nav reference's full-screen reveal.
-   Clip-path transitions keep the initial closed render still; opening and
-   closing retain the reference timing and easing.
-   ============================================================================= */
 :root {
   --nav--height: 4.25rem;
   --nav--icon-thickness: var(--border-width--main, 0.0625rem);
@@ -2174,11 +2131,9 @@ textarea:not(:where(.registry-controls, .registry-controls *)) {
   --nav--menu-close-duration: 400ms;
 }
 @media (max-width: 900px) {
-  /* Disable scroll when mobile menu is open */
   body:has(.navigation-toggle[aria-expanded="true"]) {
     overflow: hidden;
   }
-  /* The menu panel: full screen from the very top, revealed top-down. */
   .workspace-sidebar {
     top: 0;
     right: 0;
@@ -2204,7 +2159,6 @@ textarea:not(:where(.registry-controls, .registry-controls *)) {
     clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
     transition-duration: var(--nav--menu-open-duration);
   }
-  /* Menu content scrolls below the reserved header band. */
   .workspace-sidebar .sidebar-context {
     border-top: 0;
     flex: 1 1 0;
@@ -2218,7 +2172,6 @@ textarea:not(:where(.registry-controls, .registry-controls *)) {
   .workspace-sidebar .wordmark {
     display: none;
   }
-  /* Slightly tighter mobile rows retain comfortable touch targets. */
   .workspace-sidebar .workspace-nav button {
     width: 100%;
     border-radius: 0;
@@ -2235,8 +2188,6 @@ textarea:not(:where(.registry-controls, .registry-controls *)) {
     padding: 1.4rem 0 0;
     border-top: var(--border-width--main, 0.0625rem) solid var(--swatch--slate-faded-10, var(--line));
   }
-  /* Hamburger: three bars (two long, one short), published styles verbatim
-     from .nav_btn_layout / .nav_btn_line. */
   .nav-burger {
     grid-row-gap: var(--nav--hamburger-gap);
     flex-flow: column;
@@ -2263,8 +2214,6 @@ textarea:not(:where(.registry-controls, .registry-controls *)) {
     width: 1rem;
     margin-left: 0;
   }
-  /* Open state: published transforms — first line rotates down, last rotates
-     up and stretches full width, middle line fades out. */
   .navigation-toggle[aria-expanded="true"] .nav-burger i:first-child {
     transform: translateY(calc(var(--nav--hamburger-thickness) * 0.75 + var(--nav--hamburger-gap) * 1)) rotate(calc(var(--nav--hamburger-rotate) * -1deg));
   }

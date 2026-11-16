@@ -49,11 +49,6 @@ type agentRsyncSession struct {
 	signal   chan protocol.FileRsyncRequest
 }
 
-// sweepRsyncSessions reaps attempts that can never serve another stream: a
-// prepare session whose one-use grant expired without ever accepting, and a
-// send session whose grant expired without ever receiving its start signal.
-// Core aborts every attempt in the ordinary flow, so this only bounds the
-// table when Core dies before it can abort; in-flight streams are left alone.
 func (b *agentFileBridge) sweepRsyncSessions() {
 	now := time.Now()
 	b.mu.Lock()

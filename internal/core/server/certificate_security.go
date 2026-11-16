@@ -10,10 +10,6 @@ import (
 
 const certificateEncryptionKeyName = "certificate-encryption.key"
 
-// loadOrCreateCertificateEncryptionKey returns the 32-byte key that seals DNS
-// provider tokens, certificate private keys and ACME account keys at rest. The
-// key lives in the private data directory next to the SQLite database, mirroring
-// the alert-channel key.
 func loadOrCreateCertificateEncryptionKey(dataDir string) ([]byte, error) {
 	path := filepath.Join(dataDir, certificateEncryptionKeyName)
 	if info, err := os.Lstat(path); err == nil {

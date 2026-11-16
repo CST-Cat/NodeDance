@@ -1,4 +1,3 @@
-// Real isolated Core and protocol-only Agent samples; no production resources.
 const assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path'), net = require('node:net');
 const {spawn,execFileSync} = require('node:child_process'), {chromium} = require('playwright');
 const {selectValue} = require('./arc-controls.cjs');

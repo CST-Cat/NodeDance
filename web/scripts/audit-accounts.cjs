@@ -1,4 +1,3 @@
-// Isolated real Core and disposable users; never touches production or Agents.
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=require('node:net');
 const {spawn,execFileSync}=require('node:child_process'),{chromium}=require('playwright');
 const {openNavigation}=require('./sidebar-navigation.cjs');
@@ -24,8 +23,6 @@ async function freePort(){const server=net.createServer();await new Promise(reso
   await create.getByRole('button',{name:'Save account',exact:true}).click();await manager.getByRole('status').waitFor();
   let accounts=(await(await context.request.get(base+'/api/v1/accounts')).json()).accounts;const reader=accounts.find(account=>account.username==='browser-reader');assert.equal(reader.role,'viewer');
   const readerRow=()=>manager.locator('.account-management-row').filter({hasText:'browser-reader'});
-  // Editing, cancellation, reset and disable all use the same Core operations.
-  // Native modal editing reuses UiDialog without expanding the account card.
   const editTrigger=readerRow().getByRole('button',{name:'Edit account',exact:true});await editTrigger.click();const editor=manager.locator('dialog.account-dialog');await editor.waitFor();await page.keyboard.press('Escape');await editor.waitFor({state:'hidden'});
   const beforeEdit=await manager.boundingBox();await editTrigger.click();await editor.waitFor();
   assert.ok(await editor.evaluate(el=>el.matches(':modal')));assert.ok(Math.abs((await manager.boundingBox()).height-beforeEdit.height)<1);
@@ -46,7 +43,6 @@ async function freePort(){const server=net.createServer();await new Promise(reso
   assert.equal((await(await context.request.get(base+'/api/v1/accounts')).json()).accounts.find(account=>account.id===reader.id).displayName,'Read-only browser account');
   await manager.locator('.account-edit-form').getByRole('button',{name:'Save account',exact:true}).click();await page.locator('dialog[aria-describedby=ui-dialog-message]').getByRole('button',{name:'Confirm',exact:true}).click();await manager.locator('.account-edit-form').waitFor({state:'hidden'});
   await readerRow().getByRole('button',{name:'Reset password',exact:true}).click();await manager.locator('[name=resetPassword]').fill('reset-reader-password-long');await manager.locator('.account-edit-form').getByRole('button',{name:'Reset password',exact:true}).click();await page.locator('dialog[aria-describedby=ui-dialog-message]').getByRole('button',{name:'Confirm',exact:true}).click();await manager.locator('.account-edit-form').waitFor({state:'hidden'});
-  // Desktop account popover and hidden mobile account entry in both themes.
   for(const [theme,width] of [['light',1440],['dark',320]]){
    await page.setViewportSize({width,height:1000});await page.emulateMedia({colorScheme:theme});await openNavigation(page);
    const trigger=page.locator('.account-trigger'),panel=page.locator('.account-panel');
@@ -66,11 +62,9 @@ async function freePort(){const server=net.createServer();await new Promise(reso
    await page.keyboard.press('Escape');await panel.waitFor({state:'hidden'});await page.waitForFunction(()=>document.activeElement===document.querySelector('.account-trigger'));assert.ok(await trigger.evaluate(element=>document.activeElement===element),JSON.stringify({theme,width,focus:await page.evaluate(()=>({tag:document.activeElement.tagName,cls:document.activeElement.className,text:document.activeElement.textContent?.slice(0,80),side:document.querySelector('#workspace-navigation')?.className}))}));
   }
   await page.setViewportSize({width:1440,height:1000});await page.emulateMedia({colorScheme:'light'});await openNavigation(page);
-  // An already open desktop popover must not survive the mobile breakpoint.
   await page.locator('.account-trigger').click();await page.locator('.account-panel').waitFor({state:'visible'});
   await page.setViewportSize({width:390,height:1000});await page.locator('.account-panel').waitFor({state:'hidden'});
   await page.setViewportSize({width:1440,height:1000});await openNavigation(page);
-  // Collapsed sidebar still has a usable avatar and upward account card.
   await page.locator('.navigation-toggle').click();await page.locator('.workspace-sidebar.is-collapsed').waitFor();await page.locator('.account-trigger').click();await page.locator('.account-panel').waitFor({state:'visible'});await page.locator('.account-choice').first().waitFor();assert.ok(await page.locator('.account-trigger > span:first-child').isVisible());await page.keyboard.press('Escape');await page.locator('.navigation-toggle').click();
   const originalCookies=await context.cookies();
   await page.locator('.account-trigger').click();const panel=page.locator('.account-panel');await panel.locator('.account-choice').filter({hasText:'Reader renamed'}).click();
@@ -80,7 +74,6 @@ async function freePort(){const server=net.createServer();await new Promise(reso
   const stale=await browser.newContext({locale:'en-US'});await stale.addCookies(originalCookies);assert.equal((await stale.request.get(base+'/api/v1/auth/me')).status(),401);await stale.close();
   assert.equal((await mutation('POST','/api/v1/accounts',{username:'forged',role:'administrator'})).status(),403);
   await page.locator('[name=profileDisplayName]').fill('Reader own profile');await page.locator('.profile-form').getByRole('button',{name:/Save appearance/}).click();await page.getByRole('status').filter({hasText:'saved'}).waitFor();assert.equal((await(await context.request.get(base+'/api/v1/auth/profile')).json()).displayName,'Reader own profile');
-  // Switching back also requires the target password.
   await page.locator('.account-trigger').click();await panel.locator('.account-choice').filter({hasText:'NodeDance Admin'}).click();await page.locator('.account-switch-dialog [name=password]').fill(credentials.password);await page.locator('.account-switch-form').getByRole('button',{name:'Switch account',exact:true}).click();await manager.waitFor();
   const csrf=(await(await context.request.get(base+'/api/v1/auth/csrf')).json()).token;assert.ok(csrf);
   await readerRow().getByRole('button',{name:'Edit account',exact:true}).click();await manager.getByLabel('Account enabled',{exact:true}).uncheck();await manager.locator('.account-edit-form').getByRole('button',{name:'Save account',exact:true}).click();await page.locator('dialog[aria-describedby=ui-dialog-message]').getByRole('button',{name:'Confirm',exact:true}).click();await manager.locator('.account-edit-form').waitFor({state:'hidden'});

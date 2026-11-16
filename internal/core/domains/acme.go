@@ -28,8 +28,6 @@ type jobContextKey struct{}
 
 var challengeToken = regexp.MustCompile(`^[A-Za-z0-9_-]{16,256}$`)
 
-// HTTPChallenge serves only an active host-bound ACME token. It exposes neither
-// account keys nor inventory, and cannot be used as a filesystem path.
 func (s *Store) HTTPChallenge(w http.ResponseWriter, r *http.Request) bool {
 	const prefix = "/.well-known/acme-challenge/"
 	if !strings.HasPrefix(r.URL.Path, prefix) {
@@ -357,8 +355,6 @@ func (a *acmeIssuer) cleanDNS(ctx context.Context, id string) error {
 			return e
 		}
 	} else {
-		// A lost create response is recovered by its unique ownership comment. Never
-		// remove another controller's TXT record or a user's pre-existing value.
 		var records []struct {
 			ID      string `json:"id"`
 			Comment string `json:"comment"`

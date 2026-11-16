@@ -91,7 +91,6 @@ type Props = {
             sensitiveHidden.value = saved.sensitiveHidden;
         }
       } catch {
-        /* Browser-local display settings are optional. */
       }
       watchState(
         [visibleFields, memoVisible, sensitiveHidden],
@@ -126,8 +125,6 @@ type Props = {
       const settingsDialog = cell<HTMLDialogElement>(),
         settingsButton = cell<HTMLButtonElement>(),
         memoInput = cell<HTMLTextAreaElement>();
-      // OpenUI ScrollFadeContainer: the sticky context column overflows inside
-      // max-height on short viewports; mask its scroll edges.
       const contextAside = cell<HTMLElement>();
       let contextEdges: ScrollEdges | undefined;
       let timer: ReturnType<typeof setInterval> | undefined,

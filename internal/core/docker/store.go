@@ -1,7 +1,3 @@
-// Package docker stores authenticated Agent Docker inventory updates. It does
-// not own a database schema or transport handler; Core binds each connection
-// generation after authentication and supplies the current Agent lease when
-// reading a view.
 package docker
 
 import (
@@ -68,7 +64,6 @@ func (o Options) withDefaults() Options {
 	return o
 }
 
-// Identity comes from the authenticated Agent connection, never from the DTO.
 type Identity struct {
 	AgentID string
 	NodeID  string
@@ -82,8 +77,6 @@ const (
 	LeaseRevoked LeaseStatus = "revoked"
 )
 
-// Lease is the authoritative Core-side Agent lease. Docker messages cannot
-// renew it or assert that their node is online.
 type Lease struct {
 	Identity
 	Generation uint64
@@ -98,8 +91,6 @@ type ContainerRecord struct {
 	ReceivedAt time.Time                `json:"receivedAt"`
 }
 
-// PersistedNode is the safe, normalized state Core may retain between restarts.
-// It intentionally excludes transport staging buffers and raw Engine data.
 type PersistedNode struct {
 	Identity       Identity
 	Generation     uint64
@@ -109,8 +100,6 @@ type PersistedNode struct {
 	Containers     []ContainerRecord
 }
 
-// View keeps Agent connection state and Docker Engine state separate. A node
-// can therefore be online while Docker is unavailable or its inventory stale.
 type View struct {
 	AgentID               string                      `json:"agentId"`
 	NodeID                string                      `json:"nodeId"`
@@ -199,9 +188,6 @@ func NewStoreWithOptions(options Options) *Store {
 	}
 }
 
-// Clone returns an independent snapshot suitable for write-ahead persistence:
-// callers may apply to the clone, commit its PersistentNode in SQLite, and
-// publish it only after the database transaction succeeds.
 func (s *Store) Clone() *Store {
 	if s == nil {
 		return nil
@@ -218,7 +204,6 @@ func (s *Store) Clone() *Store {
 	return clone
 }
 
-// PersistentNode returns a deep copy of the last accepted safe inventory.
 func (s *Store) PersistentNode(nodeID string) (PersistedNode, bool) {
 	if s == nil || nodeID == "" {
 		return PersistedNode{}, false
@@ -247,7 +232,6 @@ func (s *Store) PersistentNode(nodeID string) (PersistedNode, bool) {
 	return result, true
 }
 
-// Revision changes only when externally visible safe state changes.
 func (s *Store) Revision(nodeID string) uint64 {
 	if s == nil {
 		return 0
@@ -260,9 +244,6 @@ func (s *Store) Revision(nodeID string) uint64 {
 	return 0
 }
 
-// RestoreStale hydrates the last safe inventory after Core restart. It does
-// not bind a connection or claim that the historical Agent/Docker state is
-// still current.
 func (s *Store) RestoreStale(saved PersistedNode) error {
 	if s == nil || !validIdentity(saved.Identity) || saved.Generation == 0 {
 		return ErrInvalidIdentity
@@ -303,8 +284,6 @@ func (s *Store) RestoreStale(saved PersistedNode) error {
 	return nil
 }
 
-// MarkStale keeps the accepted inventory while making an in-memory failure
-// visible when a persistence transaction fails.
 func (s *Store) MarkStale(nodeID, reason string) {
 	if s == nil || reason == "" {
 		return
@@ -325,9 +304,6 @@ func (s *Store) MarkStale(nodeID, reason string) {
 	}
 }
 
-// BindConnection binds a Core-assigned generation to an authenticated Agent.
-// A new generation retains the old inventory as stale until a trustworthy,
-// complete Engine scan for that generation is committed.
 func (s *Store) BindConnection(identity Identity, generation uint64) error {
 	if s == nil || !validIdentity(identity) || generation == 0 {
 		return ErrInvalidIdentity
@@ -381,26 +357,6 @@ func (s *Store) BindConnection(identity Identity, generation uint64) error {
 	return nil
 }
 
-// UnbindConnection is generation-CAS: a delayed close from an older socket
-// cannot unbind the active connection.
-func (s *Store) UnbindConnection(identity Identity, generation uint64) bool {
-	if s == nil || !validIdentity(identity) || generation == 0 {
-		return false
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	current, ok := s.bindings[identity.NodeID]
-	if !ok || current.identity != identity || current.generation != generation {
-		return false
-	}
-	delete(s.bindings, identity.NodeID)
-	return true
-}
-
-// ValidateConnection reports whether identity and generation are still the
-// authenticated, active Docker connection for its node. Core uses this before
-// validating payload contents so malformed frames queued on an older socket
-// cannot change the current generation's visible state.
 func (s *Store) ValidateConnection(identity Identity, generation uint64) error {
 	if s == nil || !validIdentity(identity) || generation == 0 {
 		return ErrInvalidIdentity
@@ -427,10 +383,6 @@ func (s *Store) ValidateConnection(identity Identity, generation uint64) error {
 	return nil
 }
 
-// Accept applies one already-decoded TypeDocker payload. identity and the
-// generation are derived from Core's authenticated socket; envelopeSequence
-// is the WSS Envelope sequence and is deliberately separate from batch.Sequence.
-// The heartbeat lease is not updated here.
 func (s *Store) Accept(identity Identity, connectionGeneration, envelopeSequence uint64,
 	batch protocol.DockerBatch, receivedAt time.Time) error {
 	if s == nil || !validIdentity(identity) || connectionGeneration == 0 || envelopeSequence == 0 || receivedAt.IsZero() {
@@ -462,8 +414,6 @@ func (s *Store) Accept(identity Identity, connectionGeneration, envelopeSequence
 	if envelopeSequence <= state.lastEnvelopeSequence {
 		return ErrStaleSequence
 	}
-	// A semantically rejected but valid frame still consumes its transport
-	// sequence, preventing the same Envelope from being replayed later.
 	state.lastEnvelopeSequence = envelopeSequence
 	expireStageLocked(state, receivedAt, s.options.SnapshotTTL)
 
@@ -549,7 +499,7 @@ func (s *Store) acceptSnapshotLocked(state *nodeState, generation uint64, batch 
 			return ErrInvalidSnapshot
 		}
 		s.applyHealthLocked(state, batch.Health, receivedAt)
-		state.queued = nil // the full image at Sequence supersedes older deltas.
+		state.queued = nil
 		state.queuedBytes = 0
 		stage = &snapshotStage{
 			generation: generation,
@@ -711,7 +661,7 @@ func (s *Store) commitSnapshotLocked(state *nodeState, stage *snapshotStage, rec
 	}
 	for id := range old {
 		if _, present := stage.items[id]; !present {
-			resourceSequence[id] = stage.sequence // tombstone against late replay.
+			resourceSequence[id] = stage.sequence
 		}
 	}
 	state.containers = updated
@@ -742,9 +692,6 @@ func (s *Store) commitSnapshotLocked(state *nodeState, stage *snapshotStage, rec
 	return nil
 }
 
-// SnapshotAt returns the newest accepted inventory and derives connection
-// state from Core's current lease. It intentionally returns a view after
-// BindConnection even when no Docker snapshot has yet succeeded.
 func (s *Store) SnapshotAt(nodeID string, lease *Lease, now time.Time) (View, bool) {
 	if s == nil || strings.TrimSpace(nodeID) != nodeID || nodeID == "" || now.IsZero() {
 		return View{}, false
@@ -825,9 +772,6 @@ func (s *Store) SnapshotAt(nodeID string, lease *Lease, now time.Time) (View, bo
 	return view, true
 }
 
-// ExpireStaging releases incomplete full-snapshot buffers whose total staging
-// duration has elapsed. Core should call it from its periodic maintenance loop;
-// Accept and SnapshotAt also perform lazy expiry.
 func (s *Store) ExpireStaging(now time.Time) int {
 	if s == nil || now.IsZero() {
 		return 0
@@ -877,10 +821,6 @@ func (s *Store) applyHealthLocked(state *nodeState, incoming *protocol.DockerHea
 	}
 }
 
-// equivalentHealthView ignores Agent wall-clock timestamps that advance on
-// health keepalives. Core tracks receive time separately for freshness, while
-// visible state revisions stay stable so heartbeats do not republish every
-// container to each dashboard client.
 func equivalentHealthView(left, right protocol.DockerHealth) bool {
 	return left.Availability == right.Availability && left.EventsConnected == right.EventsConnected && left.SnapshotFresh == right.SnapshotFresh &&
 		left.ErrorKind == right.ErrorKind && left.Reason == right.Reason
@@ -1114,7 +1054,6 @@ func expireStageLocked(state *nodeState, now time.Time, ttl time.Duration) bool 
 	return true
 }
 
-// ForgetNode discards cached data and rejects late reports from a removed node.
 func (s *Store) ForgetNode(nodeID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

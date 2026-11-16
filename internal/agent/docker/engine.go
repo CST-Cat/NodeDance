@@ -17,8 +17,6 @@ import (
 	"github.com/moby/moby/client"
 )
 
-// Engine is the small read-only surface used by discovery. Implementations
-// must return all container IDs, including stopped containers.
 type Engine interface {
 	Ping(context.Context) error
 	ListAll(context.Context) ([]string, error)
@@ -32,16 +30,10 @@ type EventStream struct {
 	Close  func()
 }
 
-// SDKEngine uses the pinned Moby Go client. The default is the local Unix
-// socket; remote TCP is intentionally not enabled by this Linux Agent module.
 type SDKEngine struct {
 	client *client.Client
 }
 
-// Container mutations may request a 30-second stop grace period. Leave room
-// for the Engine to send response headers after that period if the process
-// ignores SIGTERM. This bounds only response-header establishment; request
-// contexts still own operation cancellation and long-lived stream shutdown.
 const sdkResponseHeaderTimeout = 40 * time.Second
 
 func NewSDKEngine(socket string) (*SDKEngine, error) {
@@ -51,9 +43,6 @@ func NewSDKEngine(socket string) (*SDKEngine, error) {
 	if !strings.HasPrefix(socket, "unix:///") {
 		return nil, fmt.Errorf("Docker Engine host must be a local unix socket")
 	}
-	// Events keeps its request context for the lifetime of the streaming body.
-	// Bound only the response-header wait at the HTTP transport layer so an
-	// event subscription can remain alive for the whole Discoverer run.
 	httpClient := &http.Client{
 		Transport:     &http.Transport{ResponseHeaderTimeout: sdkResponseHeaderTimeout},
 		CheckRedirect: client.CheckRedirect,
@@ -148,8 +137,6 @@ func (e *SDKEngine) OpenEvents(ctx context.Context) (EventStream, error) {
 
 func (e *SDKEngine) Close() error { return e.client.Close() }
 
-// Client exposes the process-owned client for narrow feature adapters. The
-// runtime remains responsible for its lifetime.
 func (e *SDKEngine) Client() *client.Client {
 	if e == nil {
 		return nil
@@ -318,8 +305,6 @@ func normalizeInspect(raw []byte, observedAt time.Time) (Container, error) {
 				for _, binding := range bindings {
 					actual, ok := parseDockerPort(binding.HostPort)
 					if !ok || actual == "" {
-						// An empty HostPort means Docker has not allocated/published a
-						// host port yet; it must not be presented as an active mapping.
 						continue
 					}
 					port.Published = append(port.Published, HostPort{IP: normalizeAddress(binding.HostIP), Port: actual})
@@ -501,7 +486,7 @@ func parseDockerTime(value string) *time.Time {
 
 func parseDockerPort(value string) (string, bool) {
 	if value == "" {
-		return "", true // Docker uses an empty value for a requested dynamic port.
+		return "", true
 	}
 	n, err := strconv.ParseUint(value, 10, 16)
 	if err == nil && n == 0 {

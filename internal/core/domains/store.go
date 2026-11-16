@@ -40,8 +40,6 @@ type Issuer interface {
 	Revoke(context.Context, Certificate, []byte, []byte) error
 }
 
-// Internal HTTP customization is an injection point for isolated protocol tests,
-// never an API-controlled directory or DNS-provider endpoint.
 type Store struct {
 	db         *sql.DB
 	now        func() time.Time
@@ -52,8 +50,6 @@ type Store struct {
 	challenges map[string]challenge
 }
 
-// Secret at rest is sealed with AES-GCM; the additional data binds each
-// ciphertext to its purpose so values cannot be swapped between columns.
 const (
 	aadDNSProviderToken = "nodedance-dns-provider-token-v1"
 	aadCertificateKey   = "nodedance-certificate-private-key-v1"
@@ -86,7 +82,6 @@ func New(db *sql.DB, now func() time.Time, issuer Issuer, secretKey []byte) (*St
 	return s, nil
 }
 
-// seal encrypts a secret at rest; empty values stay empty.
 func (s *Store) seal(aad string, plain []byte) ([]byte, error) {
 	if len(plain) == 0 {
 		return nil, nil
@@ -99,14 +94,8 @@ func (s *Store) seal(aad string, plain []byte) ([]byte, error) {
 	return append([]byte(sealedPrefix), sealed...), nil
 }
 
-// sealedPrefix marks values already encrypted at rest, so a startup with a
-// missing or mismatched key fails loudly instead of re-encrypting ciphertext
-// as if it were legacy plaintext.
 const sealedPrefix = "nd1:"
 
-// open decrypts a sealed value. Values without the sealed prefix are legacy
-// plaintext from before encryption at rest existed; reads expect the startup
-// migration to have sealed them already.
 func (s *Store) open(aad string, sealed []byte) ([]byte, error) {
 	if len(sealed) == 0 {
 		return nil, nil
@@ -125,10 +114,6 @@ func (s *Store) open(aad string, sealed []byte) ([]byte, error) {
 	return plain, nil
 }
 
-// migrateSecrets encrypts values written before encryption at rest existed.
-// Values already carrying the sealed prefix are left untouched; a sealed value
-// that fails to open means the key does not match and startup must stop
-// instead of guessing.
 func (s *Store) migrateSecrets() error {
 	migrations := []struct {
 		query  string
@@ -321,8 +306,6 @@ func (s *Store) SaveDomain(ctx context.Context, id string, in DomainInput, event
 	return s.Domain(ctx, id)
 }
 
-// Bulk creation is all-or-nothing and deterministic. Existing names are returned
-// only when the supplied label/notes match; a retry cannot silently overwrite.
 func (s *Store) BulkDomains(ctx context.Context, in BulkDomains, event audit.Event) ([]Domain, error) {
 	if len(in.Domains) == 0 || len(in.Domains) > 500 {
 		return nil, errors.New("provide 1..500 domains")

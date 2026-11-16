@@ -49,8 +49,6 @@ type socketRead struct {
 	err    error
 }
 
-// reconnectBackoff tracks failed connection attempts. A validated WELCOME
-// starts a fresh retry sequence, even if the connection later drops.
 type reconnectBackoff struct {
 	attempt int
 }
@@ -330,8 +328,6 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 		return errReconnectAfterRotation
 	}
 	if welcome.CredentialRotationDone {
-		// The first connection authenticated the new verifier and committed it;
-		// reconnect once more using the now-active local credential.
 		return errReconnectAfterRotation
 	}
 	if !containsCapability(welcome.Capabilities, protocol.CapabilityMetrics) {
@@ -653,8 +649,6 @@ func runHeartbeatLoop(ctx context.Context, conn protocol.AgentChannel, reads <-c
 					dockerResult <- discoverer.Run(dockerCtx)
 					close(dockerFinishedChannel)
 				}()
-				// This defer is installed after the writer's join, so LIFO ordering
-				// stops and joins Docker observation before the socket writer closes.
 				defer func() {
 					cancelDockerFunc()
 					select {
@@ -704,8 +698,6 @@ func runHeartbeatLoop(ctx context.Context, conn protocol.AgentChannel, reads <-c
 			wireMetrics := hostmetrics.ToProtocolMetrics(snapshot)
 			payload, err := protocol.MarshalMetricsSnapshot(wireMetrics)
 			if err != nil {
-				// Invalid detail never blocks the independent heartbeat loop. The
-				// converter bounds detail lists and reports any truncation.
 				continue
 			}
 			writer.offerMetrics(protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeMetrics,
@@ -716,9 +708,6 @@ func runHeartbeatLoop(ctx context.Context, conn protocol.AgentChannel, reads <-c
 			}
 		case <-writer.streamFailures:
 			if streamBridge != nil {
-				// A single bounded notification may represent several failed
-				// streams. Drain the durable pending set so a full notification
-				// channel can never leave a browser stream hanging indefinitely.
 				for requestID := range writer.takeStreamFailures() {
 					go streamBridge.fail(ctx, writer, generation, requestID, "slow_consumer")
 				}
@@ -853,15 +842,12 @@ func runHeartbeatLoop(ctx context.Context, conn protocol.AgentChannel, reads <-c
 					return errors.New("Core container stream request is invalid or was not negotiated")
 				}
 				if envelope.Type == protocol.TypeContainerStreamClose {
-					// Cancellation must not depend on spare command-queue capacity.
 					streamBridge.stop(envelope.RequestID)
 				}
 				select {
 				case streamMessages <- envelope:
 				default:
 					if envelope.Type == protocol.TypeContainerStreamOpen {
-						// A local queue limit affects only this stream. Do not let a
-						// burst of open requests tear down the Agent heartbeat socket.
 						go streamBridge.reject(ctx, writer, generation, envelope.RequestID, "stream_limit")
 					}
 				}
