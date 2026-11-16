@@ -20,6 +20,11 @@ First run `make build`; browser scripts use the resulting `.build/nodedance` wit
 | Guest authentication, publication and adversarial boundaries | `NODEDANCE_GUEST_ATTACKS=1 node web/scripts/audit-guest.cjs` |
 | Root Agent file fixtures, dialogs and mutation recovery | `node web/scripts/audit-files.cjs` |
 | Account management and sessions | `node web/scripts/audit-accounts.cjs` |
+| Password-change, setup-window and CLI session-file boundaries | `node web/scripts/audit-sessions.cjs` |
+| Secrets at rest, forwarded-address trust, Agent channel and Core configuration rejection | `node web/scripts/audit-core-security.cjs` |
+| Backup, restore, same-directory restart and retention | `node web/scripts/audit-backup.cjs` |
+| Alert delivery, acknowledgement, silence, maintenance windows and SMTP TLS rejection | `node web/scripts/audit-alert-delivery.cjs` |
+| Root Agent entry, file safety, transfers, host commands, terminal and share ownership | `node web/scripts/audit-agent.cjs` |
 | Update submission, history, rollback and backup dialogs | `node web/scripts/audit-updates.cjs` |
 | RSS/Atom administration | `node web/scripts/audit-feeds.cjs` |
 | Domains and certificates | `node web/scripts/audit-domains.cjs` |

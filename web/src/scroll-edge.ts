@@ -74,7 +74,7 @@ export function installScrollEdges(
     const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
     if (
       pinned &&
-      distance > followTolerance &&
+      distance > tolerance &&
       performance.now() - lastUserInputAt > INPUT_COOLDOWN_MS
     ) {
       el.scrollTop = el.scrollHeight;

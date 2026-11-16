@@ -312,7 +312,9 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
    assert.equal(attacks.failures.length,0,'Guest attack findings: '+JSON.stringify(attacks.failures))
   }
   const disabled=await admin.request.put(base+'/api/v1/guest/settings',{headers,data:{...current,enabled:false}});assert.equal(disabled.status(),200)
-  await display.getByRole('button',{name:'Refresh',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('[data-testid=guest-display] h2'));assert.equal((await visitor.request.get(base+'/api/v1/public/guest/display')).status(),404)
+  await page.waitForTimeout(1100);await display.getByRole('button',{name:'Refresh',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('[data-testid=guest-display] h2'))
+  let withdrawn=await visitor.request.get(base+'/api/v1/public/guest/display');for(let attempt=0;attempt<30&&withdrawn.status()===503&&Number(withdrawn.headers()['retry-after'])>0;attempt++){await page.waitForTimeout(Number(withdrawn.headers()['retry-after'])*1000);withdrawn=await visitor.request.get(base+'/api/v1/public/guest/display')}
+  assert.equal(withdrawn.status(),404)
   await adminPage.setViewportSize({width:1440,height:1000});await adminPage.goto(base+'/#/settings');await adminPage.locator('.settings-sections').waitFor()
   await adminPage.locator('.account-trigger').click();await adminPage.locator('.account-panel').getByRole('menuitem',{name:'Sign out',exact:true}).click()
   await adminPage.locator('#login-title').waitFor();assert.equal(await adminPage.locator('.account-trigger,.account-panel').count(),0,'Sign out removes all account controls')

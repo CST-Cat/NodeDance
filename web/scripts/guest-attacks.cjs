@@ -1,7 +1,12 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),http=require('node:http')
 module.exports=async function attack({base,page,visitor,admin,headers,current,identity,probe,stopReporting,artifacts}){
  const results=[],record=(name,ok,detail)=>{results.push({name,ok,detail});if(!ok)console.error('FINDING',name,detail)}
- const browserRequest=(url,method='GET',body,extra={})=>page.evaluate(async({url,method,body,extra})=>{try{const r=await fetch(url,{method,headers:extra,body:['GET','HEAD'].includes(method)?undefined:JSON.stringify(body??{}),credentials:'include',redirect:'manual',cache:'no-store',signal:AbortSignal.timeout(5000)});return {status:r.status,type:r.type,body:await r.text(),cache:r.headers.get('cache-control')}}catch(e){return {status:0,error:String(e)}}},{url,method,body,extra})
+ const browserRequest=(url,method='GET',body,extra={})=>page.evaluate(async({url,method,body,extra})=>{try{const r=await fetch(url,{method,headers:extra,body:['GET','HEAD'].includes(method)?undefined:JSON.stringify(body??{}),credentials:'include',redirect:'manual',cache:'no-store',signal:AbortSignal.timeout(5000)});return {status:r.status,type:r.type,body:await r.text(),cache:r.headers.get('cache-control'),retry:r.headers.get('retry-after')}}catch(e){return {status:0,error:String(e)}}},{url,method,body,extra})
+ const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms)),displayPath='/api/v1/public/guest/display'
+ const limited=r=>r.status===503&&r.body?.trim()==='guest display busy'&&Number(r.retry)>0
+ const admitted=async read=>{for(let attempt=0;;attempt++){const r=await read();if(!limited(r)||attempt>=30)return r;await sleep(Number(r.retry)*1000)}}
+ const guestDisplay=()=>admitted(()=>browserRequest(displayPath))
+ const actorDisplay=actor=>admitted(async()=>{const response=await actor.request.get(base+displayPath);return {status:response.status(),body:await response.text(),retry:response.headers()['retry-after']}})
  const csrf=(await browserRequest('/api/v1/auth/csrf')).body
  const guestToken=JSON.parse(csrf).token
  for(const [name,origin,token] of [['origin','https://attacker.invalid',guestToken],['missing-token',base,''],['forged-token',base,'forged']]){const denied=await visitor.request.post(base+'/api/v1/auth/login',{headers:{Origin:origin,'X-CSRF-Token':token},data:{username:'admin',password:'forged-password',persistent:true}});record('login-boundary:'+name,denied.status()===403,{status:denied.status()})}
@@ -43,11 +48,11 @@ module.exports=async function attack({base,page,visitor,admin,headers,current,id
  const savedMemo=await(await admin.request.get(base+'/api/v1/dashboard/memo')).json()
  const memoWrite=await admin.request.put(base+'/api/v1/dashboard/memo',{headers,data:{content:'PRIVATE-OVERVIEW-MEMO <script>window.__memoLeak=1</script>',revision:savedMemo.revision}})
  assert.equal(memoWrite.status(),200)
- for(const actor of [page.context(),admin]){const name=actor===admin?'administrator':'guest';const response=await actor.request.get(base+'/api/v1/public/guest/display');const body=await response.text();record('overview-memo-private:'+name,response.status()===200&&!body.includes('PRIVATE-OVERVIEW-MEMO')&&!body.includes('kernelVersion')&&!body.includes('environment'),{status:response.status()});const forged=await actor.request.get(base+'/api/v1/public/guest/display?memo=true&core=true');record('overview-query-rejected:'+name,forged.status()===400,{status:forged.status()})}
+ for(const actor of [page.context(),admin]){const name=actor===admin?'administrator':'guest';const response=await actorDisplay(actor),body=response.body;record('overview-memo-private:'+name,response.status===200&&!body.includes('PRIVATE-OVERVIEW-MEMO')&&!body.includes('kernelVersion')&&!body.includes('environment'),{status:response.status});const forged=await actor.request.get(base+'/api/v1/public/guest/display?memo=true&core=true');record('overview-query-rejected:'+name,forged.status()===400,{status:forged.status()})}
  const enrollment=await admin.request.post(base+'/api/v1/agents/enrollments',{headers,data:{displayName:'PRIVATE INSTALL NAME',coreUrl:base,deploymentMethod:'docker',asset:{price:98765.4321,currency:'JPY',billingCycleUnit:'minute',billingCycleDays:30,purchasedAt:'2098-04-03T00:00:00Z',expiresAt:'2099-05-06T07:08:00Z',expiryNoticeDays:7,trafficLimitBytes:1234567890123,trafficAccounting:'sum',trafficWarningPercent:90}}})
  assert.equal(enrollment.status(),201);const install=await enrollment.json()
  for(const command of [install.nativeInstallCommand,install.dockerInstallCommand])assert.ok(command.includes('--token '+install.token))
- const projection=await browserRequest('/api/v1/public/guest/display')
+ const projection=await guestDisplay()
  record('guest-projection-no-store',projection.cache?.includes('no-store'),{cache:projection.cache})
  record('private-install-command-projection',projection.status===200&&!projection.body.includes(install.token)&&!projection.body.includes('PRIVATE INSTALL NAME'))
  const assetPath=catalog.operations.find(o=>o.name==='nodes.asset').path.replace('{nodeId}',install.nodeId)
@@ -56,8 +61,8 @@ module.exports=async function attack({base,page,visitor,admin,headers,current,id
  const forgedCurrency=await admin.request.post(base+'/api/v1/agents/enrollments',{headers,data:{displayName:'FORGED CURRENCY',coreUrl:base,deploymentMethod:'docker',asset:{price:1,currency:'PRIVBILL',billingCycleUnit:'month',billingCycleDays:30,trafficAccounting:'sum'}}})
  record('forged-currency-rejected',forgedCurrency.status()===400,{status:forgedCurrency.status()})
  for(const cookieContext of [page.context(),admin]){
-  const response=await cookieContext.request.get(base+'/api/v1/public/guest/display');const body=await response.text()
-  record('private-billing-projection:'+ (cookieContext===admin?'administrator':'guest'),response.status()===200&&!['98765.4321','1234567890123','2099-05-06','2098-04-03','purchasedAt','billingCycleUnit','trafficLimitBytes'].some(value=>body.includes(value)))
+  const response=await actorDisplay(cookieContext),body=response.body
+  record('private-billing-projection:'+ (cookieContext===admin?'administrator':'guest'),response.status===200&&!['98765.4321','1234567890123','2099-05-06','2098-04-03','purchasedAt','billingCycleUnit','trafficLimitBytes'].some(value=>body.includes(value)))
  }
 
  const channelOptions=catalog.operations.find(o=>o.name==='channels.options');assert.ok(channelOptions)
@@ -66,8 +71,8 @@ module.exports=async function attack({base,page,visitor,admin,headers,current,id
  const adminChannels=await admin.request.get(base+'/api/v1/alerts/channels'),adminChannelBody=await adminChannels.text()
  record('channel-admin-secret-redaction',adminChannels.status()===200&&!adminChannelBody.includes('PRIVATE_BEARER_FIXTURE')&&!adminChannelBody.includes('PRIVATE_HEADER_FIXTURE'))
  for(const cookieContext of [page.context(),admin]){
-  const response=await cookieContext.request.get(base+'/api/v1/public/guest/display'),body=await response.text()
-  record('channel-public-projection:'+(cookieContext===admin?'administrator':'guest'),response.status()===200&&!['PRIVATE CHANNEL FIXTURE','PRIVATE_BEARER_FIXTURE','PRIVATE_HEADER_FIXTURE','private-notifications'].some(v=>body.includes(v)))
+  const response=await actorDisplay(cookieContext),body=response.body
+  record('channel-public-projection:'+(cookieContext===admin?'administrator':'guest'),response.status===200&&!['PRIVATE CHANNEL FIXTURE','PRIVATE_BEARER_FIXTURE','PRIVATE_HEADER_FIXTURE','private-notifications'].some(v=>body.includes(v)))
  }
  const deleteChannel=await admin.request.delete(base+'/api/v1/alerts/channels/'+savedChannel.id,{headers,data:{revision:savedChannel.revision,confirm:true}});assert.equal(deleteChannel.status(),204)
  const anonymousInstall=await browserRequest('/api/v1/agents/enrollments','POST',{displayName:'forged-install',coreUrl:base},hostileHeaders)
@@ -75,8 +80,9 @@ module.exports=async function attack({base,page,visitor,admin,headers,current,id
  const rss=await admin.request.post(base+'/api/v1/feeds',{headers,data:{name:'PRIVATE RSS NAME',url:'https://example.invalid/feed?token=RSS_PRIVATE_TOKEN',enabled:false,keywords:[],channelIds:[],notificationMode:'off'}})
  assert.equal(rss.status(),200);const subscription=await rss.json()
  for(const suffix of ['', '/'+subscription.id, '/'+subscription.id+'/items', '/'+subscription.id+'/deliveries']){const r=await browserRequest('/api/v1/feeds'+suffix);record('private-RSS:'+suffix,r.status===401,{status:r.status})}
- const rssGuest=await browserRequest('/api/v1/public/guest/display'),rssAdmin=await admin.request.get(base+'/api/v1/public/guest/display'),rssAdminBody=await rssAdmin.text()
- record('RSS-excluded-with-admin-cookie',rssGuest.status===200&&rssAdmin.status()===200&&rssGuest.body===rssAdminBody&&!rssAdminBody.includes('PRIVATE RSS NAME')&&!rssAdminBody.includes('RSS_PRIVATE_TOKEN'),{status:rssGuest.status})
+ let rssGuest,rssAdmin,rssAdminBody
+ for(let attempt=0;attempt<3;attempt++){rssGuest=await guestDisplay();rssAdmin=await actorDisplay(admin);rssAdminBody=rssAdmin.body;if(rssGuest.status!==200||rssAdmin.status!==200||JSON.parse(rssGuest.body).generatedAt===JSON.parse(rssAdminBody).generatedAt)break}
+ record('RSS-excluded-with-admin-cookie',rssGuest.status===200&&rssAdmin.status===200&&rssGuest.body===rssAdminBody&&!rssAdminBody.includes('PRIVATE RSS NAME')&&!rssAdminBody.includes('RSS_PRIVATE_TOKEN'),{status:rssGuest.status})
  const rssDelete=await admin.request.delete(base+'/api/v1/feeds/'+subscription.id,{headers,data:{revision:subscription.revision,confirm:true}});record('private-RSS-removal',rssDelete.status()===204,{status:rssDelete.status()})
  const fileAction=catalog.operations.find(o=>o.name==='files.action');assert.ok(fileAction)
  for(const format of fileAction.bodySchema.properties.format.enum){
@@ -84,7 +90,7 @@ module.exports=async function attack({base,page,visitor,admin,headers,current,id
   record('file-archive-format:'+format,r.status===401,{status:r.status})
  }
  console.log('GUEST SECURITY: public scope and IDOR')
- const selected=JSON.parse((await browserRequest('/api/v1/public/guest/display')).body)
+ const selected=JSON.parse((await guestDisplay()).body)
  const publicID=selected.nodes[0].id
  const idorTargets=[...['metrics','history','preferences','containers','files','commands','agent-settings'].flatMap(suffix=>['/api/v1/nodes/'+identity.nodeId+'/'+suffix,'/api/v1/nodes/'+publicID+'/'+suffix]),'/api/v1/agents/'+publicID+'/revoke']
  for(const url of idorTargets){const r=await browserRequest(url,url.endsWith('/revoke')?'POST':'GET',payload,hostileHeaders);record('IDOR:'+url.split('/').pop()+':'+results.length,r.status===401,{status:r.status})}
@@ -123,35 +129,37 @@ module.exports=async function attack({base,page,visitor,admin,headers,current,id
  let policy=current;const save=async overrides=>{const r=await admin.request.put(base+'/api/v1/guest/settings',{headers,data:{...policy,...overrides}});if(r.ok())policy=await r.json();return r}
  const evil='<img src=/guest-attack-beacon onerror=window.__guestXss=1>'
  const injected=await save({title:evil,nodes:[{id:identity.nodeId,name:evil}],probes:[{id:probe.id,name:evil}]});assert.equal(injected.status(),200)
- await page.evaluate(()=>{window.__guestXss=0});await page.locator('[data-testid=guest-display]').getByRole('button',{name:'Refresh',exact:true}).click();await page.waitForFunction(evil=>document.querySelector('[data-testid=guest-display] h1')?.textContent===evil,evil)
+ await sleep(1100);await page.evaluate(()=>{window.__guestXss=0});await page.locator('[data-testid=guest-display]').getByRole('button',{name:'Refresh',exact:true}).click();await page.waitForFunction(evil=>document.querySelector('[data-testid=guest-display] h1')?.textContent===evil,evil)
  const xss=await page.evaluate(()=>({executed:window.__guestXss,images:document.querySelectorAll('[data-testid=guest-display] img').length}));record('stored-title-node-service-XSS',xss.executed===0&&xss.images===0,xss)
  assert.equal((await save({title:current.title,nodes:current.nodes,probes:current.probes})).status(),200)
- const burst=page.evaluate(async()=>{const responses=[];for(let wave=0;wave<10;wave++)responses.push(...await Promise.all(Array.from({length:24},async()=>{const r=await fetch('/api/v1/public/guest/display',{cache:'no-store'});return {status:r.status,text:await r.text()}})));return responses})
+ const burst=page.evaluate(async()=>{const responses=[],began=performance.now();for(let wave=0;wave<10;wave++)responses.push(...await Promise.all(Array.from({length:24},async()=>{const r=await fetch('/api/v1/public/guest/display',{cache:'no-store'});return {status:r.status,text:await r.text(),retry:r.headers.get('retry-after')}})));return {responses,seconds:(performance.now()-began)/1000}})
  const start=Date.now(),management=await admin.request.get(base+'/api/v1/guest/settings');record('management-during-guest-storm',management.status()===200&&Date.now()-start<2000,{status:management.status(),ms:Date.now()-start})
- const burstResults=await burst;for(let i=0;i<burstResults.length;i++){const r=burstResults[i];record('burst:'+i,[200,503].includes(r.status)&&!r.text.includes('PRIVATE HOST NAME')&&!r.text.includes('memory.used_percent'),{status:r.status})}
+ const {responses:burstResults,seconds:burstSeconds}=await burst;for(let i=0;i<burstResults.length;i++){const r=burstResults[i];record('burst:'+i,[200,503].includes(r.status)&&!r.text.includes('PRIVATE HOST NAME')&&!r.text.includes('memory.used_percent'),{status:r.status})}
+ const burstAdmitted=burstResults.filter(r=>r.status===200).length,burstRefused=burstResults.filter(r=>r.status===503)
+ record('guest-source-limit-enforced',burstRefused.length>0&&burstRefused.every(r=>r.text.trim()==='guest display busy'&&Number(r.retry)>0)&&burstAdmitted<=8+Math.ceil(2*burstSeconds)+1,{admitted:burstAdmitted,refused:burstRefused.length,seconds:burstSeconds})
  assert.equal((await save({metrics:['memory.used_percent'],historyHours:0})).status(),200)
- const changed=await browserRequest('/api/v1/public/guest/display');record('warm-cache-field-withdrawal',changed.status===200&&!changed.body.includes('cpu.usage_percent')&&changed.body.includes('memory.used_percent'),{status:changed.status})
+ const changed=await guestDisplay();record('warm-cache-field-withdrawal',changed.status===200&&!changed.body.includes('cpu.usage_percent')&&changed.body.includes('memory.used_percent'),{status:changed.status})
  assert.equal((await save({metrics:current.metrics,historyHours:current.historyHours})).status(),200)
- await browserRequest('/api/v1/public/guest/display')
+ await guestDisplay()
  const deleted=await admin.request.delete(base+'/api/v1/probes/'+probe.id+'?revision='+probe.revision,{headers});assert.equal(deleted.status(),204)
  policy=(await(await admin.request.get(base+'/api/v1/guest/settings')).json()).settings;assert.ok(!policy.probes.some(p=>p.id===probe.id),'Deleting a probe removes its saved publication');
- const afterDelete=await browserRequest('/api/v1/public/guest/display');record('warm-cache-deleted-probe',afterDelete.status===200&&!JSON.parse(afterDelete.body).probes.some(p=>p.name==='Public service'),{status:afterDelete.status,probes:JSON.parse(afterDelete.body).probes.length})
+ const afterDelete=await guestDisplay();record('warm-cache-deleted-probe',afterDelete.status===200&&!JSON.parse(afterDelete.body).probes.some(p=>p.name==='Public service'),{status:afterDelete.status,probes:JSON.parse(afterDelete.body).probes.length})
  await stopReporting();const revoked=await admin.request.post(base+'/api/v1/agents/'+identity.agentId+'/revoke',{headers});assert.equal(revoked.status(),200)
  policy=(await(await admin.request.get(base+'/api/v1/guest/settings')).json()).settings;assert.ok(!policy.nodes.some(n=>n.id===identity.nodeId),'Revocation removes the saved node publication');
- const afterRevoke=await browserRequest('/api/v1/public/guest/display');record('warm-cache-revoked-node',afterRevoke.status===200&&JSON.parse(afterRevoke.body).nodes.length===0,{status:afterRevoke.status,nodes:JSON.parse(afterRevoke.body).nodes.length})
+ const afterRevoke=await guestDisplay();record('warm-cache-revoked-node',afterRevoke.status===200&&JSON.parse(afterRevoke.body).nodes.length===0,{status:afterRevoke.status,nodes:JSON.parse(afterRevoke.body).nodes.length})
  const fresh=await admin.request.post(base+'/api/v1/agents/enrollments',{headers,data:{displayName:'Deletion fixture',coreUrl:base}});assert.equal(fresh.status(),201)
  const candidate=await fresh.json()
  const enrolled=await admin.request.post(base+'/api/v1/agents/enroll',{headers:{Origin:base,Authorization:'Enrollment '+candidate.token},data:{credential:'d'.repeat(64),requestId:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'}});assert.equal(enrolled.status(),201)
  const deletionPolicy=await save({nodes:[{id:candidate.nodeId,name:'Published deletion fixture'}],probes:[]});assert.equal(deletionPolicy.status(),200)
- const warm=await browserRequest('/api/v1/public/guest/display');assert.ok(JSON.parse(warm.body).nodes.some(n=>n.name==='Published deletion fixture'))
+ const warm=await guestDisplay();assert.ok(JSON.parse(warm.body).nodes.some(n=>n.name==='Published deletion fixture'))
  const removed=await admin.request.delete(base+'/api/v1/nodes/'+candidate.nodeId,{headers,data:{confirm:true}});assert.equal(removed.status(),200)
  policy=(await(await admin.request.get(base+'/api/v1/guest/settings')).json()).settings;assert.ok(!policy.nodes.some(n=>n.id===candidate.nodeId),'Deleting a node removes its saved publication');
  const settingsPage=await admin.newPage();await settingsPage.goto(base+'/#/settings');await settingsPage.locator('.guest-settings').waitFor();await settingsPage.locator('.guest-settings [type=submit]').waitFor();assert.equal(await settingsPage.locator('.guest-resource').filter({hasText:/Published deletion fixture|resource unavailable/i}).count(),0);await settingsPage.reload();await settingsPage.locator('.guest-settings [type=submit]').waitFor();assert.equal(await settingsPage.locator('.guest-resource').filter({hasText:/Published deletion fixture|resource unavailable/i}).count(),0);await settingsPage.close();
- const afterNodeDelete=await browserRequest('/api/v1/public/guest/display');record('warm-cache-deleted-node',afterNodeDelete.status===200&&JSON.parse(afterNodeDelete.body).nodes.length===0,{status:afterNodeDelete.status})
+ const afterNodeDelete=await guestDisplay();record('warm-cache-deleted-node',afterNodeDelete.status===200&&JSON.parse(afterNodeDelete.body).nodes.length===0,{status:afterNodeDelete.status})
  const rejected=await admin.request.post(base+'/api/v1/agents/enroll',{headers:{Origin:base,Authorization:'Enrollment '+candidate.token},data:{credential:'e'.repeat(64),requestId:'cccccccc-cccc-4ccc-8ccc-cccccccccccc'}});record('deleted-node-enrollment-rejected',rejected.status()===401,{status:rejected.status()})
  const disabled=await save({enabled:false});record('disable-with-unavailable-selected-resources',disabled.status()===200,{status:disabled.status()})
  if(!disabled.ok())assert.equal((await save({enabled:false,nodes:[],probes:[]})).status(),200)
- const closed=await browserRequest('/api/v1/public/guest/display');record('warm-cache-global-disable',closed.status===404,{status:closed.status})
+ const closed=await guestDisplay();record('warm-cache-global-disable',closed.status===404,{status:closed.status})
  const failures=results.filter(r=>!r.ok),counts={cases:results.length,failed:failures.length,privateOperations:privateOperations.length,burstRequests:burstResults.length,burst503:burstResults.filter(r=>r.status===503).length}
  fs.writeFileSync(path.join(artifacts,'security-results.json'),JSON.stringify({counts,failures,results},null,2)+'\n');console.log('GUEST SECURITY RESULT',JSON.stringify({counts,failures}))
  return {policy,counts,failures}

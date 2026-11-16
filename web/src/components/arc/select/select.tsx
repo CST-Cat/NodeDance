@@ -44,6 +44,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
     form?.addEventListener("reset", reset);
     return () => { observer.disconnect(); form?.removeEventListener("reset", reset); };
   }, [value, defaultValue]);
+  useLayoutEffect(() => { if (disabled) setExpanded(false); }, [disabled]);
   const hintId = description ? `${controlId}-description` : undefined;
   return <div ref={field} className={`${styles.field} arc-dropdown-field`}>
     {label ? <label htmlFor={controlId}>{label}</label> : null}

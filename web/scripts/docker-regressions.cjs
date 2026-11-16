@@ -63,9 +63,11 @@ module.exports = async function ({page, base, node, artifacts, catalog}) {
   const filterControls=filters.locator('input[type=search], button[data-dropdown-field]')
   assert.equal(await filterControls.count(),3,'Search, state and sort controls exist')
   assert.equal(await toolbar.locator('button').count(),6,'Primary actions and More exist')
-  const visibleControls=[...await filterControls.all(),page.locator('.docker-selection-bar').getByRole('button',{name:'Clear selection',exact:true}),...await toolbar.locator('button').all()]
-  const heights=await Promise.all(visibleControls.map(control=>control.evaluate(element=>element.getBoundingClientRect().height)))
-  assert.ok(Math.max(...heights)-Math.min(...heights)<1,'Docker filters and actions share one visible height: '+heights.join(', '))
+  const heightsOf=controls=>Promise.all(controls.map(control=>control.evaluate(element=>element.getBoundingClientRect().height)))
+  const fieldHeights=await heightsOf([...await filterControls.all(),toolbar.getByRole('button',{name:'More',exact:true})])
+  assert.equal(fieldHeights.length,4);assert.ok(Math.max(...fieldHeights)-Math.min(...fieldHeights)<1,'Docker filters and the More menu share the form control height: '+fieldHeights.join(', '))
+  const actionHeights=await heightsOf([page.locator('.docker-selection-bar').getByRole('button',{name:'Clear selection',exact:true}),...await toolbar.locator('[data-action]').all()])
+  assert.equal(actionHeights.length,6);assert.ok(Math.max(...actionHeights)-Math.min(...actionHeights)<1,'Docker selection and primary actions share the installed button height: '+actionHeights.join(', '))
   if(process.env.NODEDANCE_DOCKER_REVIEW)await page.screenshot({path:process.env.NODEDANCE_DOCKER_REVIEW})
 
   assert.equal(await page.locator('.docker-row[draggable=true], .drag-handle').count(),0,'Docker drag sorting is removed')

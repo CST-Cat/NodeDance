@@ -1,5 +1,6 @@
 const {setBrowserLanguage}=require('./browser-language.cjs')
 const {closeNavigation,selectNodeSection}=require('./sidebar-navigation.cjs')
+const {selectValue}=require('./arc-controls.cjs')
 const assert=require('node:assert/strict'),path=require('node:path')
 module.exports=async function({page,base,artifacts,catalog}){
  const operation=catalog.operations.find(o=>o.name==='agents.enrollment');assert.ok(operation)
@@ -24,7 +25,7 @@ module.exports=async function({page,base,artifacts,catalog}){
 
  await page.getByTestId('asset-traffic').fill('18446744073.709551615');assert.equal(await page.getByTestId('asset-traffic').inputValue(),'18446744073.709551615')
  await page.getByTestId('asset-price').fill('12.34')
- await page.getByTestId('asset-cycle').selectOption('year')
+ await selectValue(page.locator('label').filter({hasText:'Renewal billing cycle'}).locator('button[data-dropdown-field]'),'year')
  await page.getByTestId('asset-purchase').fill('2026-10-13')
  await page.getByTestId('asset-expiry').fill('2027-05-01T12:30')
  const generate=page.locator('.agent-setup-form .primary-button, .agent-enrollment-form .primary-button'),copy=page.locator('.agent-enrollment-actions .secondary-button')
@@ -76,7 +77,7 @@ module.exports=async function({page,base,artifacts,catalog}){
  assert.equal(await settings.getByTestId('asset-price').inputValue(),'12.34')
  assert.equal(await settings.getByTestId('asset-traffic').inputValue(),'18446744073.709551615')
  for(const unit of ['month','hour','minute','year']){
-  await settings.getByTestId('asset-cycle').selectOption(unit)
+  await selectValue(settings.locator('label').filter({hasText:'Renewal billing cycle'}).locator('button[data-dropdown-field]'),unit)
   const response=page.waitForResponse(r=>r.request().method()==='PUT'&&r.url().endsWith('/asset'))
   await settings.getByTestId('asset-save').click();assert.equal((await response).status(),200)
   await settings.getByRole('status').waitFor();assert.equal((await readAsset()).billingCycleUnit,unit);assert.equal((await readAsset()).purchasedAt,'2026-10-01T00:00:00Z')

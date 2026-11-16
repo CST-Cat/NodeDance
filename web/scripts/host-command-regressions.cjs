@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),crypto=require('node:crypto')
 const {spawnSync,execFileSync}=require('node:child_process'),{request}=require('playwright')
 const {startCore,signIn,eventually,sleep}=require('./core-fixture.cjs'),rootAgent=require('./agent-fixture.cjs')
-const outputLimit=128*1024,readable=48*1024
+const outputLimit=128*1024,readable=96*1024
 module.exports=async function hostCommands(){
  const files=fs.mkdtempSync(path.join(os.tmpdir(),'nodedance-host-command-')),marker=name=>path.join(files,name)
  const lines=name=>fs.existsSync(marker(name))?fs.readFileSync(marker(name),'utf8').split('\n').filter(Boolean):[]
@@ -58,13 +58,17 @@ module.exports=async function hostCommands(){
   const cancelled=await settled(running.id);assert.equal(cancelled.status,'cancelled');assert.equal(cancelled.exitCode,-1);assert.equal(cancelled.output,'started\n');assert.equal(cancelled.error,'command cancelled');await gone(cancelSleep)
   const again=await session.call('commands.cancel',{parameters:{...node,jobId:running.id}});assert.equal(again.status(),200);assert.deepEqual((await again.json()).job,cancelled,'Cancelling a finished job leaves its record unchanged')
 
+  const generation=async()=>{const response=await session.call('nodes.list');assert.equal(response.status(),200,await response.text());return (await response.json()).nodes.find(item=>item.nodeId===agent.nodeId).generation}
+  const connected=await generation();assert.ok(connected>0)
   const sized=await settled((await accepted(`head -c ${readable} /dev/zero | tr '\\0' x`)).id)
-  assert.equal(sized.status,'succeeded');assert.equal(sized.exitCode,0);assert.equal(sized.truncated,false);assert.equal(sized.output.length,readable);assert.ok(/^x+$/.test(sized.output))
-  const flood=await accepted(`head -c ${outputLimit+70000} /dev/zero | tr '\\0' x`)
-  const capped=await eventually(async()=>{const job=(await listed()).find(item=>item.id===flood.id);return job&&job.status!=='running'?job:null},'Flooding command did not finish',400,50)
-  assert.equal(capped.status,'succeeded');assert.equal(capped.truncated,true,'Output beyond the limit is reported as truncated');assert.equal(capped.output,'','Job listings never carry output')
-  const stored=JSON.parse(execFileSync('sudo',['cat',path.join(agent.state,'commands',flood.id+'.json')],{encoding:'utf8',maxBuffer:4*1024*1024}))
-  assert.equal(stored.output.length,outputLimit,'The Agent keeps at most the output limit');assert.equal(stored.truncated,true)
+  assert.equal(sized.status,'succeeded');assert.equal(sized.exitCode,0);assert.equal(sized.truncated,false);assert.equal(sized.output.length,readable,'Output above 64 KiB and within the limit reads back whole');assert.ok(/^x+$/.test(sized.output))
+  const escaped=await settled((await accepted(`head -c ${readable} /dev/zero | tr '\\0' '<'`)).id)
+  assert.equal(escaped.status,'succeeded');assert.equal(escaped.truncated,false);assert.equal(escaped.output.length,readable);assert.ok(/^<+$/.test(escaped.output),'Output that expands when encoded reads back whole')
+  const flood=await accepted(`head -c ${outputLimit+70000} /dev/zero | tr '\\0' x`),capped=await settled(flood.id)
+  assert.equal(capped.status,'succeeded');assert.equal(capped.truncated,true,'Output beyond the limit is reported as truncated');assert.equal(capped.output.length,outputLimit,'The Agent keeps at most the output limit');assert.ok(/^x+$/.test(capped.output))
+  assert.deepEqual(await read(flood.id),capped,'A retained result reads back repeatedly')
+  const listing=(await listed()).find(item=>item.id===flood.id);assert.equal(listing.truncated,true);assert.equal(listing.output,'','Job listings never carry output')
+  assert.equal(await generation(),connected,'Reading retained output must not drop the Agent connection')
 
   const diagnostics=await session.call('agents.diagnostics',{parameters:node});assert.equal(diagnostics.status(),200,await diagnostics.text())
   const report=await diagnostics.text(),credential=JSON.parse(execFileSync('sudo',['cat',agent.config],{encoding:'utf8'})).credential

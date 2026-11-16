@@ -53,7 +53,7 @@ func (s *Server) handleHostResponse(c *agentConnection, e protocol.Envelope) err
 		return errors.New("invalid host response")
 	}
 	var response protocol.HostResponse
-	if decodeAgentPayload(e.Payload, &response) != nil || response.Status < 200 || response.Status > 599 {
+	if decodeAgentPayloadLimit(e.Payload, &response, protocol.MaxMessageBytes) != nil || response.Status < 200 || response.Status > 599 {
 		return errors.New("invalid host response payload")
 	}
 	c.hostMu.Lock()

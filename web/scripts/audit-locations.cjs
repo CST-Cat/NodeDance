@@ -32,8 +32,12 @@ const root = path.resolve(__dirname, '../..'), artifacts = path.join(root, '.bui
   await selectValue(editor.getByRole('button',{name:'Location source',exact:true}),'city');
   await editor.getByLabel('Search cities',{exact:true}).fill('Los Angeles');
   await page.waitForResponse(r=>r.url().includes('/api/v1/locations?')&&r.url().includes('Los'));
-  await page.waitForFunction(()=>document.querySelectorAll('.location-picker select')[1]?.options.length>1);assert.equal(await editor.evaluate(form=>form.checkValidity()),false,'Choosing manual city mode requires an explicit city, never the first catalogue option');
-  await selectValue(editor.getByRole('button',{name:'City',exact:true}),la.id);
+  const city=editor.getByRole('button',{name:'City',exact:true});
+  await city.click();await page.locator('[role=menuitemradio][data-option-value='+JSON.stringify(la.id)+']').waitFor();
+  assert.equal(await page.locator('[role=menuitemradio][aria-checked=true]:not([data-option-value=""])').count(),0,'Choosing manual city mode requires an explicit city, never the first catalogue option');
+  await page.keyboard.press('Escape');await page.getByRole('menu').waitFor({state:'detached'});
+  assert.equal(await city.getAttribute('data-selected-value'),'');assert.equal(await city.getAttribute('aria-required'),'true');
+  await selectValue(city,la.id);
   await page.waitForTimeout(2200);assert.equal(await editor.getByLabel('Display name',{exact:true}).inputValue(),'Los Angeles VPS','Live samples preserve the position/name draft');
   let response=page.waitForResponse(r=>r.request().method()==='PUT'&&r.url().includes('/preferences'));await editor.getByRole('button',{name:'Save preferences',exact:true}).click();assert.equal((await response).status(),204);
   let saved=(await(await context.request.get(base+`/api/v1/nodes/${node.nodeId}/preferences`)).json()).preferences.find(p=>p.targetKind==='node');assert.deepEqual(saved.location,point(la));

@@ -175,6 +175,7 @@ func schema(value any) any {
 		}
 		enum("lineType", "", protocol.LineTypeKVM, protocol.LineTypeNAT, protocol.LineTypeHomelab)
 		props["lineType"].(map[string]any)["description"] = "Node line type detected at installation or set manually; directs which transfer layers are attempted"
+		props["lineType"].(map[string]any)["default"] = ""
 		enum("billingCycleUnit", "", "day", "year", "month", "hour", "minute")
 		enum("trafficAccounting", "sum", "max", "min", "up", "down")
 		enum("currency", protocol.Currencies...)
