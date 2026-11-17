@@ -3,6 +3,7 @@
 package terminal
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"errors"
@@ -13,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/CST-Cat/NodeDance/internal/protocol"
@@ -24,6 +26,10 @@ type tmuxEndpoint struct {
 	client                 *ptyClient
 	changed                chan struct{}
 	closed                 bool
+	closeOnce              sync.Once
+	closeErr               error
+	server                 *trackedProcess
+	release                func()
 	binary, socket, config string
 	env                    []string
 	rows, columns          uint16
@@ -53,6 +59,10 @@ func newTmuxEndpoint(ctx context.Context, directory, socketDirectory string, env
 	if output, err := command.CombinedOutput(); err != nil {
 		_ = e.Close()
 		return nil, fmt.Errorf("could not create bundled tmux session: %s: %w", output, err)
+	}
+	if err := e.track(ctx); err != nil {
+		_ = e.Close()
+		return nil, fmt.Errorf("could not identify bundled tmux server: %w", err)
 	}
 	quoted := make([]string, len(args))
 	for index, value := range args {
@@ -186,11 +196,12 @@ func (e *tmuxEndpoint) Resize(rows, columns uint16) error {
 func (e *tmuxEndpoint) ExitCode() *int { return nil }
 
 func (e *tmuxEndpoint) Close() error {
+	e.closeOnce.Do(func() { e.closeErr = e.terminate() })
+	return e.closeErr
+}
+
+func (e *tmuxEndpoint) terminate() error {
 	e.mu.Lock()
-	if e.closed {
-		e.mu.Unlock()
-		return nil
-	}
 	e.closed = true
 	client := e.client
 	e.client = nil
@@ -198,21 +209,186 @@ func (e *tmuxEndpoint) Close() error {
 	e.mu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
+	if e.server == nil {
+		_ = e.track(ctx)
+	}
+	processes := e.panes(ctx)
+	if e.server != nil {
+		processes = append(processes, e.server)
+	}
 	command := exec.CommandContext(ctx, e.binary, "-S", e.socket, "kill-server")
 	command.Env = e.env
-	_ = command.Run()
-	probeCtx, probeCancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer probeCancel()
-	probe := exec.CommandContext(probeCtx, e.binary, "-S", e.socket, "has-session", "-t", "main")
-	probe.Env = e.env
-	if runErr := probe.Run(); runErr != nil {
-		if exitErr, ok := runErr.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
-			_ = os.Remove(e.socket)
-		}
+	if command.Run() != nil && e.server != nil {
+		e.server.kill()
+	}
+	graceful, _ := ctx.Deadline()
+	survivors := awaitExit(processes, graceful)
+	for _, process := range survivors {
+		process.kill()
+	}
+	survivors = awaitExit(survivors, time.Now().Add(2*time.Second))
+	stopped := e.server != nil && !e.server.running()
+	if e.server == nil {
+		stopped = e.vacant()
+	}
+	for _, process := range processes {
+		process.close()
+	}
+	if stopped {
+		_ = os.Remove(e.socket)
 	}
 	_ = os.Remove(e.config)
-	if client != nil {
-		return client.Close()
+	var err error
+	if len(survivors) > 0 {
+		err = errors.New("bundled tmux session processes did not stop after terminal close")
 	}
+	if client != nil {
+		err = errors.Join(err, client.Close())
+	}
+	if e.release != nil {
+		e.release()
+	}
+	return err
+}
+
+func (e *tmuxEndpoint) vacant() bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	probe := exec.CommandContext(ctx, e.binary, "-S", e.socket, "has-session", "-t", "main")
+	probe.Env = e.env
+	var exit *exec.ExitError
+	return errors.As(probe.Run(), &exit) && exit.ExitCode() == 1
+}
+
+func (e *tmuxEndpoint) track(ctx context.Context) error {
+	command := exec.CommandContext(ctx, e.binary, "-S", e.socket, "display-message", "-p", "#{pid}")
+	command.Env = e.env
+	output, err := command.Output()
+	if err != nil {
+		return err
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(output)))
+	if err != nil {
+		return err
+	}
+	server, err := openProcess(pid)
+	if err != nil {
+		return err
+	}
+	bundled, err := os.Stat(e.binary)
+	if err == nil {
+		var running os.FileInfo
+		if running, err = os.Stat(fmt.Sprintf("/proc/%d/exe", pid)); err == nil && !os.SameFile(bundled, running) {
+			err = errors.New("tmux server is not the bundled binary")
+		}
+	}
+	if err != nil {
+		server.close()
+		return err
+	}
+	e.server = server
 	return nil
+}
+
+func (e *tmuxEndpoint) panes(ctx context.Context) []*trackedProcess {
+	if e.server == nil {
+		return nil
+	}
+	command := exec.CommandContext(ctx, e.binary, "-S", e.socket, "list-panes", "-a", "-F", "#{pane_pid}")
+	command.Env = e.env
+	output, err := command.Output()
+	if err != nil {
+		return nil
+	}
+	var found []*trackedProcess
+	for _, field := range strings.Fields(string(output)) {
+		pid, err := strconv.Atoi(field)
+		if err != nil {
+			continue
+		}
+		process, err := openProcess(pid)
+		if err != nil {
+			continue
+		}
+		if _, parent, _ := process.status(); parent != e.server.pid {
+			process.close()
+			continue
+		}
+		found = append(found, process)
+	}
+	return found
+}
+
+const (
+	processStatState  = 0
+	processStatParent = 1
+	processStatStart  = 19
+)
+
+type trackedProcess struct {
+	pid    int
+	start  string
+	handle *os.Process
+}
+
+func openProcess(pid int) (*trackedProcess, error) {
+	handle, err := os.FindProcess(pid)
+	if err != nil {
+		return nil, err
+	}
+	process := &trackedProcess{pid: pid, handle: handle}
+	state, _, start := process.status()
+	if state == "" {
+		process.close()
+		return nil, os.ErrProcessDone
+	}
+	process.start = start
+	return process, nil
+}
+
+func (p *trackedProcess) status() (state string, parent int, start string) {
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", p.pid))
+	if err != nil {
+		return "", 0, ""
+	}
+	fields := strings.Fields(string(data[bytes.LastIndexByte(data, ')')+1:]))
+	if len(fields) <= processStatStart {
+		return "", 0, ""
+	}
+	parent, _ = strconv.Atoi(fields[processStatParent])
+	return fields[processStatState], parent, fields[processStatStart]
+}
+
+func (p *trackedProcess) running() bool {
+	if p.handle.Signal(syscall.Signal(0)) != nil {
+		return false
+	}
+	state, _, start := p.status()
+	return state != "" && state != "Z" && state != "X" && start == p.start
+}
+
+func (p *trackedProcess) kill() {
+	if p.running() {
+		_ = p.handle.Kill()
+	}
+}
+
+func (p *trackedProcess) close() {
+	_ = p.handle.Release()
+}
+
+func awaitExit(processes []*trackedProcess, deadline time.Time) []*trackedProcess {
+	for {
+		var survivors []*trackedProcess
+		for _, process := range processes {
+			if process.running() {
+				survivors = append(survivors, process)
+			}
+		}
+		if len(survivors) == 0 || !time.Now().Before(deadline) {
+			return survivors
+		}
+		processes = survivors
+		time.Sleep(terminalPollInterval)
+	}
 }

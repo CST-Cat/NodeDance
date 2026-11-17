@@ -28,6 +28,8 @@ type SystemProvider struct {
 	directory       string
 	socketDirectory string
 	stateDirectory  string
+	endpoints       map[*tmuxEndpoint]struct{}
+	closed          bool
 }
 
 func NewSystemProvider(shell string, dockerClient *client.Client, stateDirectory string) *SystemProvider {
@@ -38,7 +40,7 @@ func NewSystemProvider(shell string, dockerClient *client.Client, stateDirectory
 	if shell == "" {
 		shell = "/bin/sh"
 	}
-	return &SystemProvider{shell: shell, docker: dockerClient, stateDirectory: stateDirectory}
+	return &SystemProvider{shell: shell, docker: dockerClient, stateDirectory: stateDirectory, endpoints: make(map[*tmuxEndpoint]struct{})}
 }
 
 func (p *SystemProvider) Open(ctx context.Context, request protocol.TerminalFrame) (Endpoint, error) {
@@ -72,6 +74,9 @@ func (p *SystemProvider) Open(ctx context.Context, request protocol.TerminalFram
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.closed {
+		return nil, errors.New("terminal provider is closed")
+	}
 	if p.directory == "" {
 		directory, err := tmuxbundle.Install(p.stateDirectory)
 		if err != nil {
@@ -85,17 +90,41 @@ func (p *SystemProvider) Open(ctx context.Context, request protocol.TerminalFram
 		p.socketDirectory = socketDirectory
 		p.directory = directory
 	}
-	return newTmuxEndpoint(ctx, p.directory, p.socketDirectory, terminalEnvironment(p.shell, request.Capabilities), request, args)
+	endpoint, err := newTmuxEndpoint(ctx, p.directory, p.socketDirectory, terminalEnvironment(p.shell, request.Capabilities), request, args)
+	if err != nil {
+		return nil, err
+	}
+	endpoint.release = func() {
+		p.mu.Lock()
+		delete(p.endpoints, endpoint)
+		p.mu.Unlock()
+	}
+	p.endpoints[endpoint] = struct{}{}
+	return endpoint, nil
 }
 
 func (p *SystemProvider) Close() error {
 	p.mu.Lock()
+	p.closed = true
+	active := make([]*tmuxEndpoint, 0, len(p.endpoints))
+	for endpoint := range p.endpoints {
+		active = append(active, endpoint)
+	}
+	p.mu.Unlock()
+	failures := make([]error, len(active))
+	var closes sync.WaitGroup
+	for index, endpoint := range active {
+		closes.Go(func() { failures[index] = endpoint.Close() })
+	}
+	closes.Wait()
+	err := errors.Join(failures...)
+	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.directory == "" {
-		return nil
+		return err
 	}
 	_ = os.RemoveAll(p.socketDirectory)
-	err := os.RemoveAll(p.directory)
+	err = errors.Join(err, os.RemoveAll(p.directory))
 	p.directory = ""
 	return err
 }

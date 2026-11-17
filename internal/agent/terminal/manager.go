@@ -11,9 +11,10 @@ import (
 )
 
 const (
-	DefaultMaxSessions = 2
-	DefaultIdleTimeout = 30 * time.Minute
-	terminalChunkBytes = 16 << 10
+	DefaultMaxSessions   = 2
+	DefaultIdleTimeout   = 30 * time.Minute
+	terminalChunkBytes   = 16 << 10
+	terminalPollInterval = 5 * time.Millisecond
 )
 
 var ErrSessionLimit = errors.New("terminal session limit reached")
@@ -37,6 +38,7 @@ type Manager struct {
 
 	mu       sync.Mutex
 	sessions map[string]*session
+	closing  map[*session]struct{}
 }
 
 type session struct {
@@ -62,7 +64,7 @@ func NewManagerWithLimits(provider Provider, maximum int, idle time.Duration) *M
 	if idle <= 0 || idle > 24*time.Hour {
 		idle = DefaultIdleTimeout
 	}
-	return &Manager{provider: provider, max: maximum, idle: idle, sessions: make(map[string]*session)}
+	return &Manager{provider: provider, max: maximum, idle: idle, sessions: make(map[string]*session), closing: make(map[*session]struct{})}
 }
 
 func (m *Manager) Handle(ctx context.Context, frame protocol.TerminalFrame, emit func(protocol.TerminalFrame) error) error {
@@ -220,7 +222,7 @@ func (m *Manager) readOutput(current *session) {
 			select {
 			case <-current.ctx.Done():
 				return
-			case <-time.After(5 * time.Millisecond):
+			case <-time.After(terminalPollInterval):
 			}
 		}
 	}
@@ -259,14 +261,19 @@ func (s *session) touch() {
 
 func (m *Manager) CloseAll() {
 	m.mu.Lock()
-	active := make([]*session, 0, len(m.sessions))
+	active := make([]*session, 0, len(m.sessions)+len(m.closing))
 	for _, current := range m.sessions {
 		active = append(active, current)
 	}
-	m.mu.Unlock()
-	for _, current := range active {
-		m.close(current, true)
+	for current := range m.closing {
+		active = append(active, current)
 	}
+	m.mu.Unlock()
+	var closes sync.WaitGroup
+	for _, current := range active {
+		closes.Go(func() { m.close(current, true) })
+	}
+	closes.Wait()
 	deadline := time.NewTimer(5 * time.Second)
 	defer deadline.Stop()
 	for _, current := range active {
@@ -289,7 +296,17 @@ func (m *Manager) close(current *session, notify bool) {
 		return
 	}
 	current.once.Do(func() {
-		m.remove(current)
+		m.mu.Lock()
+		if m.sessions[current.id] == current {
+			delete(m.sessions, current.id)
+		}
+		m.closing[current] = struct{}{}
+		m.mu.Unlock()
+		defer func() {
+			m.mu.Lock()
+			delete(m.closing, current)
+			m.mu.Unlock()
+		}()
 		current.cancel()
 		current.mu.Lock()
 		endpoint := current.endpoint

@@ -398,7 +398,11 @@ func runHeartbeatLoop(ctx context.Context, conn protocol.AgentChannel, reads <-c
 			dockerClient = sharedDocker.Client()
 		}
 		provider := agentterminal.NewSystemProvider(hostShell, dockerClient, filepath.Dir(configPath))
-		defer provider.Close()
+		defer func() {
+			if err := provider.Close(); err != nil && returnErr == nil {
+				returnErr = err
+			}
+		}()
 		manager := agentterminal.NewManager(provider)
 		terminalFrames = make(chan protocol.TerminalFrame, 64)
 		terminalCtx, cancelTerminal := context.WithCancel(ctx)
