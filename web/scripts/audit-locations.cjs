@@ -10,7 +10,7 @@ const root = path.resolve(__dirname, '../..'), artifacts = path.join(root, '.bui
  let browser, fixture;
  try {
   for(let i=0;i<100;i++){try{if((await fetch(base+'/api/v1/health')).ok)break}catch{}await new Promise(r=>setTimeout(r,100))}
-  browser = await chromium.launch({args:["--use-gl=angle","--use-angle=swiftshader","--enable-unsafe-swiftshader"]}); const context = await browser.newContext({locale:'en-US'});
+  browser = await chromium.launch({args:["--enable-unsafe-swiftshader"]}); const context = await browser.newContext({locale:'en-US'});
   const csrf = (await(await context.request.get(base+'/api/v1/auth/csrf')).json()).token;
   const credentials=JSON.parse(fs.readFileSync(dir+'/initial-admin.json'));
   const login = await context.request.post(base+'/api/v1/auth/login', {headers:{Origin:base,'X-CSRF-Token':csrf},data:credentials}); assert.equal(login.status(),200);

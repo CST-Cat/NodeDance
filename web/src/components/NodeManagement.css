@@ -224,6 +224,9 @@
   display: block;
 }
 
-.app-shell[data-theme] .node-management-page.workspace-page :is(.docker-view-controls .ui-select, .docker-toolbar) {
+.app-shell[data-theme] .node-management-page.workspace-page .docker-view-controls .ui-select {
   --control-height-sm: var(--control-height);
+}
+.app-shell[data-theme] .node-management-page.workspace-page .docker-toolbar {
+  --control-height-sm: var(--control-height-md);
 }

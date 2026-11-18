@@ -10,7 +10,6 @@ export interface ScrollEdgeOptions {
   tolerance?: number;
   follow?: {
     onChange?: (state: FollowState) => void;
-    tolerance?: number;
     hint?: number;
   };
 }
@@ -21,6 +20,13 @@ export interface ScrollEdges {
 }
 
 const INPUT_COOLDOWN_MS = 150;
+const USER_INPUTS = [
+  "wheel",
+  "touchstart",
+  "touchmove",
+  "pointerdown",
+  "keydown",
+] as const;
 
 export function installScrollEdges(
   element: HTMLElement | null | undefined,
@@ -31,16 +37,42 @@ export function installScrollEdges(
   const size = options.size ?? 28;
   const tolerance = options.tolerance ?? 2;
   const follow = options.follow?.onChange ? options.follow : undefined;
-  const followTolerance = follow?.tolerance ?? 40;
   const followHint = follow?.hint ?? 120;
 
   let pinned = true;
   let canJump = false;
-  let lastUserInputAt = 0;
+  let lastTop = el.scrollTop;
+  let seenHeight = el.scrollHeight;
+  let held = false;
+  let deferred = false;
+  let release: ReturnType<typeof setTimeout> | undefined;
   let frame = 0;
 
   function notify() {
     follow?.onChange?.({ pinned, canJump });
+  }
+
+  function setPinned(next: boolean) {
+    if (next === pinned) return;
+    pinned = next;
+    notify();
+  }
+
+  function lineHeight() {
+    const style = getComputedStyle(el);
+    const line = parseFloat(style.lineHeight);
+    return Number.isFinite(line) ? line : parseFloat(style.fontSize);
+  }
+
+  function trackPosition() {
+    const top = el.scrollTop;
+    const height = el.scrollHeight;
+    const distance = Math.min(height, seenHeight) - top - el.clientHeight;
+    if (distance <= tolerance) setPinned(true);
+    else if (top < lastTop) setPinned(false);
+    else if (top > lastTop && distance <= lineHeight()) setPinned(true);
+    lastTop = top;
+    if (!held) seenHeight = height;
   }
 
   function measure() {
@@ -57,11 +89,8 @@ export function installScrollEdges(
         atBottom ? "0px" : `${size}px`,
       );
       if (follow) {
-        const distance = el.scrollHeight - top - el.clientHeight;
-        const nextPinned = distance <= followTolerance;
-        const nextJump = distance > followHint;
-        if (nextPinned !== pinned || nextJump !== canJump) {
-          pinned = nextPinned;
+        const nextJump = el.scrollHeight - top - el.clientHeight > followHint;
+        if (nextJump !== canJump) {
           canJump = nextJump;
           notify();
         }
@@ -71,29 +100,38 @@ export function installScrollEdges(
 
   function followContent() {
     if (!follow) return;
-    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
-    if (
-      pinned &&
-      distance > tolerance &&
-      performance.now() - lastUserInputAt > INPUT_COOLDOWN_MS
-    ) {
-      el.scrollTop = el.scrollHeight;
-      pinned = true;
-      canJump = false;
-      notify();
-    }
+    trackPosition();
+    deferred = held;
+    if (!pinned || held) return;
+    el.scrollTop = el.scrollHeight;
+    lastTop = el.scrollTop;
+  }
+
+  function hold() {
+    held = true;
+    clearTimeout(release);
+    release = setTimeout(() => {
+      held = false;
+      if (deferred) followContent();
+    }, INPUT_COOLDOWN_MS);
   }
 
   function markUserInput() {
-    lastUserInputAt = performance.now();
-    if (pinned || canJump) {
-      pinned = false;
-      notify();
-    }
+    seenHeight = el.scrollHeight;
+    hold();
   }
 
   function onScroll() {
+    if (follow) {
+      trackPosition();
+      if (held) hold();
+    }
     measure();
+  }
+
+  function onResize() {
+    measure();
+    followContent();
   }
 
   function followLatest(smooth = false) {
@@ -101,13 +139,17 @@ export function installScrollEdges(
       top: el.scrollHeight,
       behavior: smooth && !prefersReducedMotion() ? "smooth" : "auto",
     });
-    lastUserInputAt = 0;
+    clearTimeout(release);
+    held = false;
+    deferred = false;
+    lastTop = el.scrollTop;
+    seenHeight = el.scrollHeight;
     pinned = true;
     canJump = false;
     notify();
   }
 
-  const observer = new ResizeObserver(measure);
+  const observer = new ResizeObserver(onResize);
   observer.observe(el);
   const mutations = new MutationObserver(() => {
     measure();
@@ -116,8 +158,10 @@ export function installScrollEdges(
   mutations.observe(el, { childList: true, subtree: true, characterData: true });
 
   el.addEventListener("scroll", onScroll, { passive: true });
-  el.addEventListener("wheel", markUserInput, { passive: true });
-  el.addEventListener("touchstart", markUserInput, { passive: true });
+  if (follow)
+    for (const input of USER_INPUTS)
+      el.addEventListener(input, markUserInput, { passive: true });
+  followContent();
   measure();
   notify();
 
@@ -125,11 +169,12 @@ export function installScrollEdges(
     followLatest,
     dispose() {
       if (frame) cancelAnimationFrame(frame);
+      clearTimeout(release);
       mutations.disconnect();
       observer.disconnect();
       el.removeEventListener("scroll", onScroll);
-      el.removeEventListener("wheel", markUserInput);
-      el.removeEventListener("touchstart", markUserInput);
+      for (const input of USER_INPUTS)
+        el.removeEventListener(input, markUserInput);
     },
   };
 }
